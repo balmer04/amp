@@ -77,6 +77,18 @@ function normalizeStoredState(rawState) {
     settings: {
       ...DEFAULT_SETTINGS,
       ...nextState.settings,
+      operational: {
+        ...DEFAULT_SETTINGS.operational,
+        ...nextState.settings?.operational,
+      },
+      clientPanel: {
+        ...DEFAULT_SETTINGS.clientPanel,
+        ...nextState.settings?.clientPanel,
+      },
+      branding: {
+        ...DEFAULT_SETTINGS.branding,
+        ...nextState.settings?.branding,
+      },
       tierThresholds: nextThresholds,
       tierBenefits: nextBenefits,
       tierBenefitConfig: nextBenefitConfig,
@@ -738,6 +750,26 @@ export function AppDataProvider({ children }) {
     }))
   }
 
+  const updateAdminSettings = (sectionKey, nextValues, actorName) => {
+    updateState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        [sectionKey]: {
+          ...DEFAULT_SETTINGS[sectionKey],
+          ...current.settings?.[sectionKey],
+          ...nextValues,
+        },
+      },
+      auditLog: appendAuditEntry(
+        current.auditLog,
+        actorName,
+        'actualizó la configuracion de',
+        sectionKey,
+      ),
+    }))
+  }
+
   const updateOrderAdminNotes = (orderId, adminNotes) => {
     updateState((current) => ({
       ...current,
@@ -952,7 +984,8 @@ export function AppDataProvider({ children }) {
       const total =
         calculateOrderTotal(items, current.products, client.tier, current.settings) +
         (Number(shippingCost) || 0)
-      const shouldAutoApprove = paymentMethod !== 'transfer'
+      const shouldAutoApprove =
+        !current.settings?.operational?.manualOrderApproval && paymentMethod !== 'transfer'
       const nextOrder = {
         id: orderId,
         clientId,
@@ -1135,6 +1168,7 @@ export function AppDataProvider({ children }) {
       updateTierThreshold,
       updateTierBenefits,
       updateTierBenefitConfig,
+      updateAdminSettings,
       updateOrderAdminNotes,
       updateCustomerStatus,
       approveOrder,

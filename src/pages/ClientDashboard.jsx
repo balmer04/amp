@@ -145,6 +145,7 @@ function ClientSidebarIcon({ tabId }) {
 function ClientSidebar({
   activeTab,
   onTabChange,
+  tabs,
   client,
   session,
   loyaltyStatus,
@@ -232,7 +233,7 @@ function ClientSidebar({
   )
 }
 
-function ClientPageHeader({ activeTab, cartCount, onRepeatLastOrder, onCartClick }) {
+function ClientPageHeader({ activeTab, cartCount, onRepeatLastOrder, onCartClick, settings }) {
   const meta = CLIENT_VIEW_META[activeTab] ?? CLIENT_VIEW_META.inicio
 
   return (
@@ -244,9 +245,11 @@ function ClientPageHeader({ activeTab, cartCount, onRepeatLastOrder, onCartClick
 
       {activeTab === 'inicio' ? (
         <div className="client-page-actions">
-          <button type="button" className="client-page-action-btn" onClick={onRepeatLastOrder}>
-            ↻ Repetir ultimo pedido
-          </button>
+          {settings.clientPanel?.enableRepeatLastOrder ? (
+            <button type="button" className="client-page-action-btn" onClick={onRepeatLastOrder}>
+              ↻ Repetir ultimo pedido
+            </button>
+          ) : null}
           <button type="button" className="client-page-action-btn" onClick={onCartClick}>
             Carrito
             <span className="client-page-action-badge">{cartCount}</span>
@@ -472,6 +475,7 @@ function CatalogToolbar({
   viewMode,
   onViewModeChange,
   onRepeatLastOrder,
+  showRepeatLastOrder,
 }) {
   return (
     <div className="catalog-toolbar">
@@ -506,15 +510,17 @@ function CatalogToolbar({
 
       <ViewSwitcher viewMode={viewMode} onChange={onViewModeChange} />
 
-      <button
-        type="button"
-        className="repeat-order-btn repeat-order-icon-btn"
-        onClick={onRepeatLastOrder}
-        aria-label="Repetir ultimo pedido"
-        title="Repetir ultimo pedido"
-      >
-        <span aria-hidden="true">↻</span>
-      </button>
+      {showRepeatLastOrder ? (
+        <button
+          type="button"
+          className="repeat-order-btn repeat-order-icon-btn"
+          onClick={onRepeatLastOrder}
+          aria-label="Repetir ultimo pedido"
+          title="Repetir ultimo pedido"
+        >
+          <span aria-hidden="true">↻</span>
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -530,9 +536,11 @@ function OrderSummaryCard({ items, products, tierName, settings, onRepeatLastOrd
           <span className="client-card-eyebrow">Pedido</span>
           <h2>Tu pedido actual</h2>
         </div>
-        <button type="button" className="mini-link-btn" onClick={onRepeatLastOrder}>
-          Repetir ultimo pedido
-        </button>
+        {settings.clientPanel?.enableRepeatLastOrder ? (
+          <button type="button" className="mini-link-btn" onClick={onRepeatLastOrder}>
+            Repetir ultimo pedido
+          </button>
+        ) : null}
       </div>
 
       <div className="order-summary-list">
@@ -615,6 +623,7 @@ function ProductCatalog({
         viewMode={viewMode}
         onViewModeChange={onViewModeChange}
         onRepeatLastOrder={onRepeatLastOrder}
+        showRepeatLastOrder={settings.clientPanel?.enableRepeatLastOrder}
       />
 
       <div className="product-catalog-scroll">
@@ -728,7 +737,7 @@ function HomeSection({
         <article className="client-panel-card promo-hero-card">
           <div className="promo-hero-copy">
             <span className="client-card-eyebrow">Novedades</span>
-            <h2>Promociones y oportunidades de la semana</h2>
+            <h2>{settings.branding?.clientHomeTitle || 'Promociones y oportunidades de la semana'}</h2>
             <p>Ofertas activas y productos destacados para que entres directo a la compra.</p>
           </div>
 
@@ -764,6 +773,7 @@ function HomeSection({
           </div>
         </article>
 
+        {settings.clientPanel?.showCurrentOrderCard ? (
         <article className="client-panel-card">
           <div className="client-card-header">
             <div>
@@ -807,9 +817,11 @@ function HomeSection({
             </div>
           </div>
         </article>
+        ) : null}
       </div>
 
       <aside className="client-home-sidebar">
+        {settings.clientPanel?.showBenefitsCard ? (
         <article className="client-panel-card discount-card">
           <div className="client-card-header">
             <div>
@@ -844,6 +856,7 @@ function HomeSection({
             </div>
           </div>
         </article>
+        ) : null}
 
         <OrderSummaryCard
           items={orderItems}
@@ -1488,12 +1501,22 @@ export function ClientDashboard() {
   }, [clientChat.adminTypingAt])
   const loyaltyStatus = getLoyaltyStatus(getClientLifetimePoints(client), settings.tierThresholds)
   const tierBenefitSummary = getTierBenefitSummary(loyaltyStatus.currentTier.name, settings)
+  const visibleTabs = useMemo(
+    () => tabs.filter((tab) => (tab.id === 'chat' ? settings.clientPanel?.enableChat : true)),
+    [settings.clientPanel?.enableChat],
+  )
 
   useEffect(() => {
     if (activeTab === 'chat') {
       openChat(client.id, 'client')
     }
   }, [activeTab, client.id])
+
+  useEffect(() => {
+    if (!settings.clientPanel?.enableChat && activeTab === 'chat') {
+      setActiveTab('inicio')
+    }
+  }, [activeTab, settings.clientPanel?.enableChat])
 
   const categories = useMemo(
     () => ['Todos', ...new Set(products.map((product) => product.category))],
@@ -1758,6 +1781,7 @@ export function ClientDashboard() {
       <ClientSidebar
         activeTab={activeTab}
         onTabChange={handleTabChange}
+        tabs={visibleTabs}
         client={client}
         session={session}
         loyaltyStatus={loyaltyStatus}
@@ -1771,6 +1795,7 @@ export function ClientDashboard() {
           cartCount={cartCount}
           onRepeatLastOrder={handleRepeatLastOrder}
           onCartClick={handleGoToCart}
+          settings={settings}
         />
 
         <section className="client-dashboard-shell client-shell-card">

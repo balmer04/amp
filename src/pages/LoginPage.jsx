@@ -140,13 +140,19 @@ export function LoginPage() {
             </div>
           </div>
 
-          <div className="demo-credentials">
+          <div className="login-request-card">
+            <p className="login-request-eyebrow">Acceso mayorista</p>
+            <h3>Solicitá tu cuenta profesional</h3>
             <p>
-              Cliente: <strong>cliente@amprev.com</strong> / <strong>cliente123</strong>
+              Si tenés una pinturería, empresa o perfil profesional, pedí acceso al
+              canal mayorista de Andrés Merino.
             </p>
-            <p>
-              Admin: <strong>admin@amprev.com</strong> / <strong>admin123</strong>
-            </p>
+            <a
+              className="login-request-button"
+              href="mailto:admin@amprev.com?subject=Solicitud%20de%20cuenta%20profesional"
+            >
+              Solicitar cuenta profesional
+            </a>
           </div>
         </div>
       </section>

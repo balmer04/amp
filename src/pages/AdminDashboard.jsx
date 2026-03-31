@@ -980,6 +980,11 @@ function ClientDetailModal({
   }
   const safeClientOrders = Array.isArray(clientOrders) ? clientOrders : []
   const loyalty = getLoyaltyStatus(getClientLifetimePoints(safeClient))
+  const totalBilled = safeClientOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0)
+  const orderCount = safeClientOrders.length
+  const daysWithoutBuying = safeClient.lastPurchase
+    ? Math.floor((Date.now() - new Date(safeClient.lastPurchase.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+    : null
 
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
@@ -992,12 +997,52 @@ function ClientDetailModal({
       >
         <div className="admin-modal-header">
           <div>
-            <span className="admin-card-eyebrow">Ficha del cliente</span>
+            <span className="admin-card-eyebrow">Cuenta comercial</span>
             <h3>{safeClient.businessName}</h3>
+            <p className="admin-modal-copy">
+              {safeClient.category} · CUIT {safeClient.taxId}
+            </p>
           </div>
           <button type="button" className="admin-modal-close" onClick={onClose}>
             Cerrar
           </button>
+        </div>
+
+        <div className="admin-client-profile-summary">
+          <div className="admin-client-profile-pill">
+            <span>Estado</span>
+            <strong>{safeClient.status}</strong>
+          </div>
+          <div className="admin-client-profile-pill">
+            <span>Nivel</span>
+            <strong>{safeClient.tier}</strong>
+          </div>
+          <div className="admin-client-profile-pill">
+            <span>Pedidos</span>
+            <strong>{orderCount}</strong>
+          </div>
+          <div className="admin-client-profile-pill">
+            <span>Facturado</span>
+            <strong>{formatCurrency(totalBilled)}</strong>
+          </div>
+        </div>
+
+        <div className="admin-client-recap-banner">
+          <strong>Resumen comercial</strong>
+          <span>
+            {daysWithoutBuying !== null
+              ? `${safeClient.businessName} lleva ${daysWithoutBuying} dias desde su ultima compra.`
+              : `${safeClient.businessName} aun no tiene compras registradas.`}
+          </span>
+          <div className="admin-client-recap-tags">
+            {safeClient.pendingBalance > 0 ? <span>Saldo pendiente</span> : null}
+            {daysWithoutBuying !== null && daysWithoutBuying > 60 ? <span>En riesgo</span> : null}
+            {loyalty.nextTier ? (
+              <span>{`A ${loyalty.pointsToNext.toLocaleString('es-AR')} pts de ${loyalty.nextTier.name}`}</span>
+            ) : (
+              <span>Nivel maximo</span>
+            )}
+          </div>
         </div>
 
         <div className="admin-client-modal-grid">
@@ -1056,7 +1101,7 @@ function ClientDetailModal({
               <span>Estado</span>
               <span>Accion</span>
             </div>
-            {safeClientOrders.map((order) => (
+            {safeClientOrders.length > 0 ? safeClientOrders.map((order) => (
               <div key={order.id} className="admin-table-row admin-client-orders-grid">
                 <strong>{order.id}</strong>
                 <span>{formatDate(order.createdAt)}</span>
@@ -1068,7 +1113,7 @@ function ClientDetailModal({
                   Ver detalle
                 </button>
               </div>
-            ))}
+            )) : <div className="admin-empty-inline">Todavia no hay pedidos registrados para este cliente.</div>}
           </div>
         </section>
 
@@ -1082,7 +1127,7 @@ function ClientDetailModal({
               <span>Referencia</span>
               <span>Registrado por</span>
             </div>
-            {safeClient.paymentHistory.map((payment) => (
+            {safeClient.paymentHistory.length > 0 ? safeClient.paymentHistory.map((payment) => (
               <div key={payment.id} className="admin-table-row admin-payments-grid">
                 <span>{formatDate(payment.date)}</span>
                 <strong>{formatCurrency(payment.amount)}</strong>
@@ -1090,9 +1135,42 @@ function ClientDetailModal({
                 <span>{payment.reference}</span>
                 <span>{payment.registeredBy}</span>
               </div>
-            ))}
+            )) : <div className="admin-empty-inline">No hay pagos cargados todavia.</div>}
           </div>
         </section>
+
+        <div className="admin-client-modal-grid">
+          <section className="admin-modal-section">
+            <h4>Documentos adjuntos</h4>
+            <div className="admin-client-docs-placeholder">
+              <strong>Espacio preparado para adjuntos</strong>
+              <p>
+                Aca vas a poder ver factura, constancia de CUIT, listas de precios y archivos
+                comerciales del cliente.
+              </p>
+              <div className="admin-client-docs-tags">
+                <span>CUIT</span>
+                <span>Factura</span>
+                <span>Lista de precios</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="admin-modal-section">
+            <h4>Resumen IA futuro</h4>
+            <div className="admin-client-docs-placeholder admin-client-ai-preview">
+              <strong>
+                {daysWithoutBuying !== null
+                  ? `Lleva ${daysWithoutBuying} dias sin comprar`
+                  : 'Todavia no tiene compras registradas'}
+              </strong>
+              <p>
+                A futuro, la IA va a resumir aca el estado comercial del cliente, su frecuencia
+                de compra y la mejor accion sugerida para el equipo.
+              </p>
+            </div>
+          </section>
+        </div>
 
         <section className="admin-modal-section">
           <div className="admin-modal-header">
@@ -1466,6 +1544,9 @@ function PaymentModal({ client, onClose, onSave }) {
           <div>
             <span className="admin-card-eyebrow">Registrar pago</span>
             <h3>{client.businessName}</h3>
+            <p className="admin-modal-copy">
+              Saldo pendiente actual: {formatCurrency(Number(client.pendingBalance) || 0)}
+            </p>
           </div>
           <button type="button" className="admin-modal-close" onClick={onClose}>
             Cancelar
@@ -1541,6 +1622,9 @@ function QuickNoteModal({ client, onClose, onSave }) {
           <div>
             <span className="admin-card-eyebrow">Nota rápida</span>
             <h3>{client.businessName}</h3>
+            <p className="admin-modal-copy">
+              Agregá un comentario interno para el seguimiento comercial del cliente.
+            </p>
           </div>
           <button type="button" className="admin-modal-close" onClick={onClose}>
             Cancelar
@@ -1563,6 +1647,123 @@ function QuickNoteModal({ client, onClose, onSave }) {
           >
             Agregar nota
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ClientAiModal({ client, clientOrders, products, onClose }) {
+  if (!client) {
+    return null
+  }
+
+  const totalSpent = clientOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0)
+  const avgTicket =
+    clientOrders.length > 0 ? Math.round(totalSpent / clientOrders.length) : 0
+  const daysWithoutBuying = client.lastPurchase
+    ? Math.floor((Date.now() - new Date(client.lastPurchase.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+    : null
+
+  const categoryTotals = clientOrders.reduce((accumulator, order) => {
+    order.items.forEach((item) => {
+      const product =
+        products.find((entry) => entry.id === item.productId || entry.sku === item.productId) ?? null
+      const category = product?.category ?? 'General'
+      accumulator[category] = (accumulator[category] ?? 0) + (Number(item.qty) || 0)
+    })
+
+    return accumulator
+  }, {})
+
+  const favoriteCategory =
+    Object.entries(categoryTotals).sort((left, right) => right[1] - left[1])[0]?.[0] ?? 'General'
+
+  const recommendation =
+    daysWithoutBuying !== null && daysWithoutBuying > 60
+      ? `Este cliente lleva ${daysWithoutBuying} dias sin comprar. Conviene contactarlo esta semana con una propuesta puntual en ${favoriteCategory.toLowerCase()}.`
+      : client.pendingBalance > 0
+        ? 'Tiene saldo pendiente. Antes de impulsar una nueva venta, conviene ordenar la cobranza y retomar el seguimiento.'
+        : `Su categoria mas fuerte hoy es ${favoriteCategory.toLowerCase()}. Se puede empujar una recompra o una promo cruzada desde esa base.`
+
+  const strongestWindow =
+    favoriteCategory === 'Impermeabilizantes'
+      ? 'otono'
+      : favoriteCategory === 'Latex'
+        ? 'temporadas de obra y repintado'
+        : 'su ciclo comercial habitual'
+
+  return (
+    <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="admin-modal-card admin-client-ai-modal"
+        role="dialog"
+        aria-modal="true"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="admin-modal-header">
+          <div>
+            <span className="admin-card-eyebrow">Asistente IA</span>
+            <h3>{client.businessName}</h3>
+            <p className="admin-modal-copy">
+              Lectura automatizada del cliente para seguimiento comercial.
+            </p>
+          </div>
+          <button type="button" className="admin-modal-close" onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+
+        <div className="admin-client-ai-grid">
+          <div className="admin-client-ai-highlight">
+            <h4>Resumen sugerido</h4>
+            <p>{recommendation}</p>
+          </div>
+
+          <div className="admin-client-ai-stats">
+            <div>
+              <span>Ultima compra</span>
+              <strong>
+                {client.lastPurchase ? formatDate(client.lastPurchase.createdAt) : 'Sin compras'}
+              </strong>
+            </div>
+            <div>
+              <span>Ticket promedio</span>
+              <strong>{formatCurrency(avgTicket)}</strong>
+            </div>
+            <div>
+              <span>Categoria mas comprada</span>
+              <strong>{favoriteCategory}</strong>
+            </div>
+            <div>
+              <span>Nivel actual</span>
+              <strong>{client.tier}</strong>
+            </div>
+          </div>
+
+          <div className="admin-client-ai-signals">
+            <h4>Senales detectadas</h4>
+            <div className="admin-client-ai-signal-list">
+              {daysWithoutBuying !== null ? (
+                <span>{`${daysWithoutBuying} dias sin comprar`}</span>
+              ) : (
+                <span>Sin compras registradas</span>
+              )}
+              <span>{`${clientOrders.length} pedidos historicos`}</span>
+              <span>{`Ticket promedio ${formatCurrency(avgTicket)}`}</span>
+              <span>{`Categoria clave: ${favoriteCategory}`}</span>
+            </div>
+          </div>
+
+          <div className="admin-client-ai-notes">
+            <h4>Proximas acciones sugeridas</h4>
+            <ul>
+              <li>Revisar su historial reciente antes del proximo contacto comercial.</li>
+              <li>Ofrecer una accion puntual sobre {favoriteCategory.toLowerCase()}.</li>
+              <li>Este cliente suele responder mejor en {strongestWindow}.</li>
+              <li>Registrar en la ficha el resultado del contacto para que quede en el CRM.</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
@@ -1978,6 +2179,7 @@ export function AdminDashboard() {
     updateTierThreshold,
     updateTierBenefits,
     updateTierBenefitConfig,
+    updateAdminSettings,
     updateOrderAdminNotes,
     approveOrder,
     changeOrderStatus,
@@ -1993,11 +2195,13 @@ export function AdminDashboard() {
   const [clientSearch, setClientSearch] = useState('')
   const [clientLevelFilter, setClientLevelFilter] = useState('Todos')
   const [clientStatusFilter, setClientStatusFilter] = useState('Todos')
+  const [clientQuickFilter, setClientQuickFilter] = useState('Todos')
   const [clientSort, setClientSort] = useState({ key: 'businessName', direction: 'asc' })
   const [editingClientId, setEditingClientId] = useState(null)
   const [isCreatingClient, setIsCreatingClient] = useState(false)
   const [paymentClientId, setPaymentClientId] = useState(null)
   const [quickNoteClientId, setQuickNoteClientId] = useState(null)
+  const [aiClientId, setAiClientId] = useState(null)
   const [orderSearch, setOrderSearch] = useState('')
   const [orderStatusFilter, setOrderStatusFilter] = useState('Todos')
   const [stockSearch, setStockSearch] = useState('')
@@ -2020,6 +2224,9 @@ export function AdminDashboard() {
         ...client,
         loyaltyStatus: getLoyaltyStatus(getClientLifetimePoints(client), settings.tierThresholds),
         tier: getTierByPoints(getClientLifetimePoints(client), settings.tierThresholds).name,
+        totalBilled: orders
+          .filter((order) => order.clientId === client.id)
+          .reduce((sum, order) => sum + (Number(order.total) || 0), 0),
         lastPurchase:
           orders
             .filter((order) => order.clientId === client.id)
@@ -2049,8 +2256,11 @@ export function AdminDashboard() {
   )
 
   const lowStockItems = useMemo(
-    () => products.filter((product) => product.currentStock < 5),
-    [products],
+    () =>
+      settings.operational?.criticalStockAlerts
+        ? products.filter((product) => product.currentStock < 5)
+        : [],
+    [products, settings.operational?.criticalStockAlerts],
   )
   const deferredStockSearch = useDeferredValue(stockSearch)
   const productIdsInOrders = useMemo(
@@ -2082,7 +2292,7 @@ export function AdminDashboard() {
             return orderMonth === currentMonth ? sum + order.total : sum
           }, 0),
         ),
-        detail: 'Facturacion consolidada del periodo actual',
+        detail: 'Facturacion del periodo actual',
         tone: 'blue',
       },
       {
@@ -2091,13 +2301,13 @@ export function AdminDashboard() {
           orders.filter((order) => ['Pendiente', 'Aprobado', 'Preparando'].includes(order.status))
             .length,
         ),
-        detail: 'Pedidos que necesitan seguimiento operativo',
+        detail: 'Pedidos que requieren seguimiento',
         tone: 'slate',
       },
       {
         title: 'Nuevos clientes',
         value: String(recentClientsCount),
-        detail: 'Altas reales registradas en los ultimos 7 dias',
+        detail: 'Altas en los ultimos 7 dias',
         tone: 'red',
       },
       {
@@ -2123,10 +2333,27 @@ export function AdminDashboard() {
           clientLevelFilter === 'Todos' || client.tier === clientLevelFilter
         const matchesStatus =
           clientStatusFilter === 'Todos' || client.status === clientStatusFilter
+        const flags = getClientFlags(client)
+        const matchesQuickFilter =
+          clientQuickFilter === 'Todos' ||
+          (clientQuickFilter === 'Activos' && client.status === 'Activo') ||
+          (clientQuickFilter === 'En riesgo' && flags.isInactiveLongTime) ||
+          (clientQuickFilter === 'Inactivos' && client.status === 'Inactivo') ||
+          (clientQuickFilter === 'Con saldo pendiente' && Number(client.pendingBalance) > 0) ||
+          (clientQuickFilter === 'Bloqueados' && client.status === 'Bloqueado')
 
-        return matchesQuery && matchesLevel && matchesStatus
+        return matchesQuery && matchesLevel && matchesStatus && matchesQuickFilter
       })
       .sort((left, right) => {
+        if (clientQuickFilter === 'En riesgo') {
+          const leftRisk = getClientFlags(left).isInactiveLongTime ? 1 : 0
+          const rightRisk = getClientFlags(right).isInactiveLongTime ? 1 : 0
+
+          if (leftRisk !== rightRisk) {
+            return rightRisk - leftRisk
+          }
+        }
+
         const multiplier = clientSort.direction === 'asc' ? 1 : -1
         const getSortableValue = (client) => {
           switch (clientSort.key) {
@@ -2144,6 +2371,8 @@ export function AdminDashboard() {
               return getClientLifetimePoints(client)
             case 'creditLimit':
               return client.creditLimit
+            case 'totalBilled':
+              return client.totalBilled
             case 'pendingBalance':
               return client.pendingBalance
             case 'lastPurchase':
@@ -2166,7 +2395,7 @@ export function AdminDashboard() {
       })
 
     return sortedClients
-  }, [clientLevelFilter, clientSearch, clientSort, clientStatusFilter, clientsWithTier])
+  }, [clientLevelFilter, clientQuickFilter, clientSearch, clientSort, clientStatusFilter, clientsWithTier])
 
   const filteredOrders = useMemo(() => {
     const query = orderSearch.trim().toLowerCase()
@@ -2243,7 +2472,7 @@ export function AdminDashboard() {
       {
         title: 'Capital a recuperar',
         value: formatCurrency(pendingReceivables),
-        detail: 'Saldo pendiente acumulado de clientes',
+        detail: 'Saldo pendiente de clientes',
         tone: pendingReceivables > 0 ? 'red' : 'slate',
       },
       {
@@ -2253,9 +2482,9 @@ export function AdminDashboard() {
         tone: 'blue',
       },
       {
-        title: 'Oportunidades de reactivacion',
+        title: 'Clientes por reactivar',
         value: String(inactiveClients),
-        detail: 'Clientes sin compras en los ultimos 60 dias',
+        detail: 'Sin compras hace mas de 60 dias',
         tone: inactiveClients > 0 ? 'blue' : 'slate',
       },
       {
@@ -2263,7 +2492,7 @@ export function AdminDashboard() {
         value: formatCurrency(
           monthlyOrders.length > 0 ? Math.round(monthlyRevenue / monthlyOrders.length) : 0,
         ),
-        detail: 'Ventas del mes divididas por cantidad de pedidos',
+        detail: 'Ventas del mes / cantidad de pedidos',
         tone: 'navy',
       },
     ]
@@ -2469,6 +2698,8 @@ export function AdminDashboard() {
     Date.now() - new Date(selectedChatConversation.clientTypingAt).getTime() < 3000
   const selectedClient = clientsWithTier.find((client) => client.id === selectedClientId) ?? null
   const selectedClientOrders = ordersWithClient.filter((order) => order.clientId === selectedClientId)
+  const aiClient = clientsWithTier.find((client) => client.id === aiClientId) ?? null
+  const aiClientOrders = ordersWithClient.filter((order) => order.clientId === aiClientId)
   const editingClient = clients.find((client) => client.id === editingClientId) ?? null
   const paymentClient = clients.find((client) => client.id === paymentClientId) ?? null
   const quickNoteClient = clients.find((client) => client.id === quickNoteClientId) ?? null
@@ -2638,12 +2869,19 @@ export function AdminDashboard() {
 
   const clientSummary = useMemo(
     () => ({
-      total: filteredClients.length,
-      active: filteredClients.filter((client) => client.status === 'Activo').length,
-      blocked: filteredClients.filter((client) => client.status === 'Bloqueado').length,
-      withDebt: filteredClients.filter((client) => client.pendingBalance > 0).length,
+      total: clientsWithTier.length,
+      active: clientsWithTier.filter((client) => client.status === 'Activo').length,
+      risk: clientsWithTier.filter((client) => getClientFlags(client).isInactiveLongTime).length,
+      inactive: clientsWithTier.filter((client) => client.status === 'Inactivo').length,
+      blocked: clientsWithTier.filter((client) => client.status === 'Bloqueado').length,
+      withDebtClients: clientsWithTier.filter((client) => Number(client.pendingBalance) > 0).length,
+      withDebtAmount: clientsWithTier.reduce(
+        (sum, client) => sum + (Number(client.pendingBalance) || 0),
+        0,
+      ),
+      filtered: filteredClients.length,
     }),
-    [filteredClients],
+    [clientsWithTier, filteredClients.length],
   )
 
   const handleLogout = () => {
@@ -2672,6 +2910,14 @@ export function AdminDashboard() {
     setSelectedClientId(null)
     setSelectedOrderId(orderId)
     navigateToSection('pedidos')
+  }
+
+  const handleClientSortSelect = (value) => {
+    const [key, direction] = String(value).split(':')
+    setClientSort({
+      key: key || 'businessName',
+      direction: direction === 'desc' ? 'desc' : 'asc',
+    })
   }
 
   const handleDispatchOrder = (order) => {
@@ -2870,6 +3116,40 @@ export function AdminDashboard() {
     URL.revokeObjectURL(url)
   }
 
+  const handleExportClientsCsv = () => {
+    const headers = [
+      'Cliente',
+      'CUIT',
+      'Nivel',
+      'Ultima compra',
+      'Facturacion total',
+      'Saldo pendiente',
+      'Estado',
+    ]
+    const rows = filteredClients.map((client) => [
+      client.businessName,
+      client.taxId,
+      client.tier,
+      client.lastPurchase ? formatDateTime(client.lastPurchase.createdAt) : 'Sin compras',
+      client.totalBilled,
+      client.pendingBalance,
+      client.status,
+    ])
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','),
+      )
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'clientes-crm.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleDeleteProduct = (product) => {
     if (!product || productIdsInOrders.has(product.id)) {
       return
@@ -3017,7 +3297,11 @@ export function AdminDashboard() {
           </button>
             <div>
               <span className="admin-card-eyebrow">Panel administrador</span>
-              <h1>{activeSection === 'dashboard' ? 'CRM operativo Andres Merino' : activeSectionLabel}</h1>
+              <h1>
+                {activeSection === 'dashboard'
+                  ? settings.branding?.adminDashboardTitle || 'CRM operativo Andres Merino'
+                  : activeSectionLabel}
+              </h1>
             </div>
             <div className="admin-topbar-actions">
               {activeSection === 'dashboard' ? (
@@ -3038,9 +3322,61 @@ export function AdminDashboard() {
                   </button>
                 </>
               ) : null}
-              <div className="admin-topbar-profile">
-                <span>{initials}</span>
-              </div>
+
+              {activeSection === 'clientes' ? (
+                <div className="admin-orders-filters admin-clients-toolbar admin-clients-topbar-actions">
+                  <label className="admin-search admin-search-wide">
+                    <input
+                      type="text"
+                      value={clientSearch}
+                      onChange={(event) => setClientSearch(event.target.value)}
+                      placeholder="Buscar por nombre, CUIT o ciudad..."
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    className="admin-action-btn neutral"
+                    onClick={handleExportClientsCsv}
+                  >
+                    Exportar
+                  </button>
+
+                  <button
+                    type="button"
+                    className="admin-primary-btn"
+                    onClick={() => setIsCreatingClient(true)}
+                  >
+                    + Nuevo cliente
+                  </button>
+
+                  <label className="admin-status-filter">
+                    <select
+                      value={clientLevelFilter}
+                      onChange={(event) => setClientLevelFilter(event.target.value)}
+                    >
+                      <option value="Todos">Todos los niveles</option>
+                      {TIER_ORDER.map((tier) => (
+                        <option key={tier} value={tier}>
+                          {tier}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="admin-status-filter">
+                    <select
+                      value={clientStatusFilter}
+                      onChange={(event) => setClientStatusFilter(event.target.value)}
+                    >
+                      <option value="Todos">Todos los estados</option>
+                      <option value="Activo">Activo</option>
+                      <option value="Inactivo">Inactivo</option>
+                      <option value="Bloqueado">Bloqueado</option>
+                    </select>
+                  </label>
+                </div>
+              ) : null}
             </div>
           </header>
 
@@ -3138,7 +3474,7 @@ export function AdminDashboard() {
                 </div>
 
                 {attentionItems.length > 0 ? (
-                  <div className="admin-card-stack">
+                  <div className="admin-card-stack admin-attention-list">
                     {attentionItems.map((item) => (
                       <div key={item.id} className={`admin-attention-row ${item.tone}`}>
                         <span>{item.text}</span>
@@ -3199,96 +3535,92 @@ export function AdminDashboard() {
 
           {activeSection === 'clientes' ? (
             <section className="admin-section">
-              <div className="admin-section-header admin-orders-header">
-                <div>
-                  <h2>Gestion de Clientes</h2>
+              <div className="admin-clients-summary admin-clients-summary-main">
+                <div className="admin-clients-summary-item accent-blue">
+                  <span>Total clientes</span>
+                  <strong>{clientSummary.total}</strong>
+                  <small>Registrados en el sistema</small>
                 </div>
-
-                <div className="admin-orders-filters admin-clients-toolbar">
-                  <button
-                    type="button"
-                    className="admin-primary-btn"
-                    onClick={() => setIsCreatingClient(true)}
-                  >
-                    Nuevo cliente
-                  </button>
-
-                  <label className="admin-search admin-search-wide">
-                    <input
-                      type="text"
-                      value={clientSearch}
-                      onChange={(event) => setClientSearch(event.target.value)}
-                      placeholder="Buscar por nombre, CUIT o ciudad..."
-                    />
-                  </label>
-
-                  <label className="admin-status-filter">
-                    <select
-                      value={clientLevelFilter}
-                      onChange={(event) => setClientLevelFilter(event.target.value)}
-                    >
-                      <option value="Todos">Todos los niveles</option>
-                      {TIER_ORDER.map((tier) => (
-                        <option key={tier} value={tier}>
-                          {tier}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="admin-status-filter">
-                    <select
-                      value={clientStatusFilter}
-                      onChange={(event) => setClientStatusFilter(event.target.value)}
-                    >
-                      <option value="Todos">Todos los estados</option>
-                      <option value="Activo">Activo</option>
-                      <option value="Inactivo">Inactivo</option>
-                      <option value="Bloqueado">Bloqueado</option>
-                    </select>
-                  </label>
+                <div className="admin-clients-summary-item accent-green">
+                  <span>Activos</span>
+                  <strong>{clientSummary.active}</strong>
+                  <small>Compraron en los ultimos 60 dias</small>
+                </div>
+                <div className="admin-clients-summary-item accent-orange">
+                  <span>En riesgo</span>
+                  <strong>{clientSummary.risk}</strong>
+                  <small>Sin compras hace +60 dias</small>
+                </div>
+                <div className="admin-clients-summary-item accent-red">
+                  <span>Saldo pendiente</span>
+                  <strong>{formatCurrency(clientSummary.withDebtAmount)}</strong>
+                  <small>Clientes con deuda activa</small>
                 </div>
               </div>
 
-              <div className="admin-card admin-card-table-scroll admin-clients-card">
-                <div className="admin-clients-summary">
-                  <div className="admin-clients-summary-item">
-                    <span>Clientes visibles</span>
-                    <strong>{clientSummary.total}</strong>
-                  </div>
-                  <div className="admin-clients-summary-item">
-                    <span>Activos</span>
-                    <strong>{clientSummary.active}</strong>
-                  </div>
-                  <div className="admin-clients-summary-item">
-                    <span>Bloqueados</span>
-                    <strong>{clientSummary.blocked}</strong>
-                  </div>
-                  <div className="admin-clients-summary-item">
-                    <span>Con saldo pendiente</span>
-                    <strong>{clientSummary.withDebt}</strong>
-                  </div>
+              <div className="admin-clients-controls-row">
+                <div className="admin-client-quick-filters">
+                  {[
+                    ['Todos', clientSummary.total],
+                    ['Activos', clientSummary.active],
+                    ['En riesgo', clientSummary.risk],
+                    ['Inactivos', clientSummary.inactive],
+                    ['Con saldo pendiente', clientSummary.withDebtClients],
+                    ['Bloqueados', clientSummary.blocked],
+                  ].map(([filter, count]) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      className={
+                        clientQuickFilter === filter
+                          ? filter === 'En riesgo'
+                            ? 'admin-client-filter-pill active risk'
+                            : 'admin-client-filter-pill active'
+                          : filter === 'En riesgo'
+                            ? 'admin-client-filter-pill risk'
+                            : 'admin-client-filter-pill'
+                      }
+                      onClick={() => setClientQuickFilter(filter)}
+                    >
+                      <span>{filter}</span>
+                      <strong>{count}</strong>
+                    </button>
+                  ))}
                 </div>
 
+                <label className="admin-clients-sort-select">
+                  <span>Ordenar por</span>
+                  <select
+                    value={`${clientSort.key}:${clientSort.direction}`}
+                    onChange={(event) => handleClientSortSelect(event.target.value)}
+                  >
+                    <option value="lastPurchase:desc">Ultima compra</option>
+                    <option value="businessName:asc">Nombre</option>
+                    <option value="tier:asc">Nivel</option>
+                    <option value="totalBilled:desc">Facturacion total</option>
+                    <option value="pendingBalance:desc">Saldo pendiente</option>
+                    <option value="status:asc">Estado</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="admin-card admin-card-table-scroll admin-clients-card">
                 <div className="admin-table">
                   <div className="admin-table-row admin-table-head admin-client-crm-grid">
                     <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('businessName')}>
-                      Nombre / Razon Social
+                      Cliente
                     </button>
                     <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('tier')}>
                       Nivel
                     </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('points')}>
-                      Puntos acumulados
-                    </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('creditLimit')}>
-                      Limite
-                    </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('pendingBalance')}>
-                      Saldo pendiente
-                    </button>
                     <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('lastPurchase')}>
                       Ultima compra
+                    </button>
+                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('totalBilled')}>
+                      Facturacion total
+                    </button>
+                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('pendingBalance')}>
+                      Saldo pend.
                     </button>
                     <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('status')}>
                       Estado
@@ -3306,55 +3638,52 @@ export function AdminDashboard() {
                       }
                     >
                       <div className="admin-client-cell">
-                        <strong>
-                          {client.businessName}
-                        </strong>
-                        <span>{client.category}</span>
-                        <div className="admin-client-flags-row">
-                          {getClientFlags(client).hasOverdueBalance ? (
-                            <span className="admin-client-flag danger" title="Saldo vencido">
-                              Saldo vencido
-                            </span>
-                          ) : null}
-                          {getClientFlags(client).isInactiveLongTime ? (
-                            <span className="admin-client-flag warning" title="Sin compras en mas de 60 dias">
-                              Sin compras +60 dias
-                            </span>
-                          ) : null}
-                          {getClientFlags(client).isCloseToNextTier ? (
-                            <span className="admin-client-flag star" title="Cerca de subir de nivel">
-                              Cerca de subir
-                            </span>
-                          ) : null}
+                        <div className="admin-client-avatar">
+                          {client.businessName
+                            .split(' ')
+                            .map((part) => part[0])
+                            .join('')
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </div>
+                        <div className="admin-client-main">
+                          <strong>{client.businessName}</strong>
+                          <span>
+                            {client.category} · CUIT {client.taxId}
+                          </span>
+                          <div className="admin-client-flags-row">
+                            {getClientFlags(client).isInactiveLongTime ? (
+                              <span className="admin-client-flag warning" title="Sin compras en mas de 60 dias">
+                                Sin compras +60 dias
+                              </span>
+                            ) : null}
+                            {getClientFlags(client).hasOverdueBalance ? (
+                              <span className="admin-client-flag danger" title="Saldo pendiente">
+                                Saldo pendiente
+                              </span>
+                            ) : null}
+                            {getClientFlags(client).isCloseToNextTier ? (
+                              <span className="admin-client-flag star" title="Cerca de subir de nivel">
+                                Cerca de subir
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                       <div className="admin-tier-summary">
                         <TierBadge tier={client.tier} />
+                        <small>{getClientLifetimePoints(client).toLocaleString('es-AR')} pts</small>
+                      </div>
+                      <div className="admin-client-last-purchase">
+                        <strong>
+                          {client.lastPurchase ? formatDate(client.lastPurchase.createdAt) : 'Sin compras'}
+                        </strong>
                         <small>
-                          {client.loyaltyStatus.nextTier
-                            ? `Faltan ${client.loyaltyStatus.pointsToNext.toLocaleString('es-AR')} pts`
-                            : 'Nivel maximo'}
+                          {client.lastPurchase ? getRelativeTimeLabel(client.lastPurchase.createdAt) : 'Sin registros'}
                         </small>
                       </div>
-                      <div className="admin-tier-points-cell">
-                        <EditableNumberField
-                          value={getClientLifetimePoints(client)}
-                          onCommit={(nextValue) =>
-                            updateClientPoints(client.id, nextValue, session.name)
-                          }
-                          suffix="pts"
-                        />
-                        <small className="admin-tier-progress-text">
-                          {client.loyaltyStatus.nextTier
-                            ? `Proximo: ${client.loyaltyStatus.nextTier.name}`
-                            : 'Sin siguiente nivel'}
-                        </small>
-                      </div>
-                      <strong>{formatCurrency(client.creditLimit)}</strong>
+                      <strong>{formatCurrency(client.totalBilled)}</strong>
                       <span>{formatCurrency(client.pendingBalance)}</span>
-                      <span>
-                        {client.lastPurchase ? formatDate(client.lastPurchase.createdAt) : 'Sin compras'}
-                      </span>
                       <button
                         type="button"
                         className={
@@ -3378,35 +3707,44 @@ export function AdminDashboard() {
                       <div className="admin-order-actions admin-client-actions">
                         <button
                           type="button"
-                          className="admin-table-link"
+                          className="admin-table-link admin-client-action-view"
                           onClick={() => setSelectedClientId(client.id)}
                         >
                           Ver ficha
                         </button>
                         <button
                           type="button"
-                          className="admin-action-btn neutral"
-                          onClick={() => setEditingClientId(client.id)}
+                          className="admin-action-btn neutral admin-client-action-ai"
+                          onClick={() => setAiClientId(client.id)}
                         >
-                          Editar
+                          IA
                         </button>
+                        {client.pendingBalance > 0 ? (
+                          <button
+                            type="button"
+                            className="admin-action-btn approve admin-client-action-payment"
+                            onClick={() => setPaymentClientId(client.id)}
+                          >
+                            Reg. pago
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          className="admin-action-btn neutral"
-                          onClick={() => setPaymentClientId(client.id)}
-                        >
-                          Registrar pago
-                        </button>
-                        <button
-                          type="button"
-                          className="admin-action-btn neutral"
+                          className="admin-action-btn neutral admin-client-action-note"
                           onClick={() => setQuickNoteClientId(client.id)}
                         >
-                          Nota rápida
+                          Nota
                         </button>
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="admin-clients-footer">
+                  <span>
+                    {filteredClients.length} clientes
+                    {clientSummary.risk > 0 ? ` · ${clientSummary.risk} alerta activa` : ''}
+                  </span>
                 </div>
               </div>
             </section>
@@ -3529,6 +3867,13 @@ export function AdminDashboard() {
 
           {activeSection === 'pedidos' ? (
             <section className="admin-section">
+            <div className="admin-orders-summary-grid">
+              <MetricCard title="Pedidos del dia" value={String(orderSummary.totalToday)} detail="Ingresados hoy" tone="navy" />
+              <MetricCard title="Monto del dia" value={formatCurrency(orderSummary.amountToday)} detail="Facturacion del dia" tone="blue" />
+              <MetricCard title="Pendientes" value={String(orderSummary.pending)} detail="Sin atencion definitiva" tone="red" />
+              <MetricCard title="Despachados hoy" value={String(orderSummary.dispatchedToday)} detail="Pedidos ya enviados" tone="slate" />
+            </div>
+
             <div className="admin-section-header admin-orders-header">
               <div className="admin-orders-filters admin-orders-filters-full">
                 <button
@@ -3562,13 +3907,6 @@ export function AdminDashboard() {
                   </select>
                 </label>
               </div>
-            </div>
-
-            <div className="admin-orders-summary-grid">
-              <MetricCard title="Pedidos del dia" value={String(orderSummary.totalToday)} detail="Ingresados hoy" tone="navy" />
-              <MetricCard title="Monto del dia" value={formatCurrency(orderSummary.amountToday)} detail="Facturacion del dia" tone="blue" />
-              <MetricCard title="Pendientes" value={String(orderSummary.pending)} detail="Sin atencion definitiva" tone="red" />
-              <MetricCard title="Despachados hoy" value={String(orderSummary.dispatchedToday)} detail="Pedidos ya enviados" tone="slate" />
             </div>
 
             <div className="admin-card">
@@ -3934,32 +4272,213 @@ export function AdminDashboard() {
 
             <div className="admin-config-grid">
               <article className="admin-card">
-                <h3>Alertas actuales</h3>
+                <h3>Preferencias operativas</h3>
+                <p className="admin-config-copy">
+                  Define como queres operar pedidos y alertas desde el panel administrador.
+                </p>
                 <div className="admin-card-stack">
-                  {lowStockItems.map((item) => (
-                    <div key={item.id} className="admin-alert-row">
-                      <strong>{item.name}</strong>
-                      <span>{item.currentStock} unidades disponibles</span>
+                  <div className="admin-config-row editable">
+                    <div>
+                      <strong>Aprobacion manual de pedidos</strong>
+                      <span>Si esta activa, los pedidos nuevos quedan pendientes hasta revision.</span>
                     </div>
-                  ))}
+                    <label className="admin-status-filter">
+                      <select
+                        value={settings.operational?.manualOrderApproval ? 'on' : 'off'}
+                        onChange={(event) =>
+                          updateAdminSettings(
+                            'operational',
+                            { manualOrderApproval: event.target.value === 'on' },
+                            session.name,
+                          )
+                        }
+                      >
+                        <option value="on">Activa</option>
+                        <option value="off">Automatica</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="admin-config-row editable">
+                    <div>
+                      <strong>Alertas de stock critico</strong>
+                      <span>Controla si el CRM muestra productos con riesgo de quiebre de stock.</span>
+                    </div>
+                    <label className="admin-status-filter">
+                      <select
+                        value={settings.operational?.criticalStockAlerts ? 'on' : 'off'}
+                        onChange={(event) =>
+                          updateAdminSettings(
+                            'operational',
+                            { criticalStockAlerts: event.target.value === 'on' },
+                            session.name,
+                          )
+                        }
+                      >
+                        <option value="on">Activas</option>
+                        <option value="off">Ocultas</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="admin-config-row editable">
+                    <div>
+                      <strong>Edicion de estados de pedido</strong>
+                      <span>Permite mantener visible el control operativo del detalle de pedido.</span>
+                    </div>
+                    <label className="admin-status-filter">
+                      <select
+                        value={settings.operational?.allowOrderStatusEditing ? 'on' : 'off'}
+                        onChange={(event) =>
+                          updateAdminSettings(
+                            'operational',
+                            { allowOrderStatusEditing: event.target.value === 'on' },
+                            session.name,
+                          )
+                        }
+                      >
+                        <option value="on">Habilitada</option>
+                        <option value="off">Solo lectura</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
               </article>
 
               <article className="admin-card">
-                <h3>Preferencias operativas</h3>
+                <h3>Panel del cliente</h3>
+                <p className="admin-config-copy">
+                  Activa o desactiva bloques visibles del panel cliente desde administracion.
+                </p>
                 <div className="admin-card-stack">
-                  <div className="admin-config-row">
-                    <span>Aprobacion manual de pedidos</span>
-                    <strong>Activa</strong>
+                  <div className="admin-config-row editable">
+                    <div>
+                      <strong>Tarjeta de beneficios</strong>
+                      <span>Muestra u oculta el bloque de descuentos activos en el inicio.</span>
+                    </div>
+                    <label className="admin-status-filter">
+                      <select
+                        value={settings.clientPanel?.showBenefitsCard ? 'on' : 'off'}
+                        onChange={(event) =>
+                          updateAdminSettings(
+                            'clientPanel',
+                            { showBenefitsCard: event.target.value === 'on' },
+                            session.name,
+                          )
+                        }
+                      >
+                        <option value="on">Visible</option>
+                        <option value="off">Oculta</option>
+                      </select>
+                    </label>
                   </div>
-                  <div className="admin-config-row">
-                    <span>Notificacion por stock critico</span>
-                    <strong>Activa</strong>
+
+                  <div className="admin-config-row editable">
+                    <div>
+                      <strong>Tarjeta de pedido actual</strong>
+                      <span>Controla si el seguimiento del ultimo pedido aparece en el inicio.</span>
+                    </div>
+                    <label className="admin-status-filter">
+                      <select
+                        value={settings.clientPanel?.showCurrentOrderCard ? 'on' : 'off'}
+                        onChange={(event) =>
+                          updateAdminSettings(
+                            'clientPanel',
+                            { showCurrentOrderCard: event.target.value === 'on' },
+                            session.name,
+                          )
+                        }
+                      >
+                        <option value="on">Visible</option>
+                        <option value="off">Oculta</option>
+                      </select>
+                    </label>
                   </div>
-                  <div className="admin-config-row">
-                    <span>Canjes de puntos</span>
-                    <strong>Requieren aprobacion</strong>
+
+                  <div className="admin-config-row editable">
+                    <div>
+                      <strong>Repetir ultimo pedido</strong>
+                      <span>Habilita el acceso rapido para repetir una compra anterior.</span>
+                    </div>
+                    <label className="admin-status-filter">
+                      <select
+                        value={settings.clientPanel?.enableRepeatLastOrder ? 'on' : 'off'}
+                        onChange={(event) =>
+                          updateAdminSettings(
+                            'clientPanel',
+                            { enableRepeatLastOrder: event.target.value === 'on' },
+                            session.name,
+                          )
+                        }
+                      >
+                        <option value="on">Habilitado</option>
+                        <option value="off">Oculto</option>
+                      </select>
+                    </label>
                   </div>
+
+                  <div className="admin-config-row editable">
+                    <div>
+                      <strong>Modulo de chat</strong>
+                      <span>Muestra u oculta la seccion de chat del panel cliente.</span>
+                    </div>
+                    <label className="admin-status-filter">
+                      <select
+                        value={settings.clientPanel?.enableChat ? 'on' : 'off'}
+                        onChange={(event) =>
+                          updateAdminSettings(
+                            'clientPanel',
+                            { enableChat: event.target.value === 'on' },
+                            session.name,
+                          )
+                        }
+                      >
+                        <option value="on">Visible</option>
+                        <option value="off">Oculto</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </article>
+
+              <article className="admin-card">
+                <h3>Branding y textos</h3>
+                <p className="admin-config-copy">
+                  Ajusta textos principales que impactan en la cabecera del admin y el inicio del cliente.
+                </p>
+                <div className="admin-card-stack">
+                  <label className="admin-form-field">
+                    <span>Titulo principal del dashboard admin</span>
+                    <input
+                      type="text"
+                      defaultValue={settings.branding?.adminDashboardTitle}
+                      onBlur={(event) =>
+                        updateAdminSettings(
+                          'branding',
+                          { adminDashboardTitle: event.target.value.trim() || 'CRM operativo Andres Merino' },
+                          session.name,
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label className="admin-form-field">
+                    <span>Titulo del inicio del cliente</span>
+                    <input
+                      type="text"
+                      defaultValue={settings.branding?.clientHomeTitle}
+                      onBlur={(event) =>
+                        updateAdminSettings(
+                          'branding',
+                          {
+                            clientHomeTitle:
+                              event.target.value.trim() || 'Promociones y oportunidades de la semana',
+                          },
+                          session.name,
+                        )
+                      }
+                    />
+                  </label>
                 </div>
               </article>
             </div>
@@ -4064,6 +4583,13 @@ export function AdminDashboard() {
           addQuickClientNote(quickNoteClient.id, note, session.name)
           setQuickNoteClientId(null)
         }}
+      />
+
+      <ClientAiModal
+        client={aiClient}
+        clientOrders={aiClientOrders}
+        products={products}
+        onClose={() => setAiClientId(null)}
       />
     </main>
   )

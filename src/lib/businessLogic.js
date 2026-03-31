@@ -105,6 +105,24 @@ export const DEFAULT_TIER_BENEFIT_CONFIG = {
   },
 }
 
+export const DEFAULT_OPERATIONAL_SETTINGS = {
+  manualOrderApproval: true,
+  criticalStockAlerts: true,
+  allowOrderStatusEditing: true,
+}
+
+export const DEFAULT_CLIENT_PANEL_SETTINGS = {
+  showBenefitsCard: true,
+  showCurrentOrderCard: true,
+  enableRepeatLastOrder: true,
+  enableChat: true,
+}
+
+export const DEFAULT_BRANDING_SETTINGS = {
+  adminDashboardTitle: 'CRM operativo Andres Merino',
+  clientHomeTitle: 'Promociones y oportunidades de la semana',
+}
+
 export const DEFAULT_CLIENTS = [
   {
     id: 1,
@@ -654,6 +672,9 @@ export const DEFAULT_SETTINGS = {
   tierBenefitConfig: DEFAULT_TIER_BENEFIT_CONFIG,
   pointsRatio: LOYALTY_POINTS_RATIO,
   pointsAccrualEvent: 'Despachado',
+  operational: DEFAULT_OPERATIONAL_SETTINGS,
+  clientPanel: DEFAULT_CLIENT_PANEL_SETTINGS,
+  branding: DEFAULT_BRANDING_SETTINGS,
 }
 
 export function migrateTierThresholds(rawThresholds) {
