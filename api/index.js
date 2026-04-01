@@ -4,6 +4,9 @@ import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
+// Evita que Node.js rechace el certificado de Supabase
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const { Pool } = pg;
 
 // Vercel inyecta automáticamente esta variable si enlazaste Supabase
