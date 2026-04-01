@@ -1174,11 +1174,22 @@ export function AppDataProvider({ children }) {
       return
     }
 
-    let nextChatsForServer = [];
+    const timestamp = new Date().toISOString()
+    const newMessage = {
+      id: `CHAT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      senderRole,
+      senderName,
+      text:
+        normalizedText ||
+        (senderRole === 'admin'
+          ? 'Te comparto este pedido para revisarlo.'
+          : 'Te comparto este pedido para que lo revises.'),
+      orderReference: normalizedOrderReference,
+      createdAt: timestamp,
+    }
 
-    updateState((current) => {
-      const timestamp = new Date().toISOString()
-      const nextChats = normalizeChats(current.clients, current.chats).map((chat) => {
+    const generateNextChats = (currentClients, currentChats) => {
+      return normalizeChats(currentClients, currentChats).map((chat) => {
         if (chat.clientId !== clientId) {
           return chat
         }
@@ -1188,36 +1199,21 @@ export function AppDataProvider({ children }) {
           updatedAt: timestamp,
           adminLastSeenAt: senderRole === 'admin' ? timestamp : chat.adminLastSeenAt,
           clientLastSeenAt: senderRole === 'client' ? timestamp : chat.clientLastSeenAt,
-          lastClientActivityAt:
-            senderRole === 'client' ? timestamp : chat.lastClientActivityAt,
-          lastAdminActivityAt:
-            senderRole === 'admin' ? timestamp : chat.lastAdminActivityAt,
+          lastClientActivityAt: senderRole === 'client' ? timestamp : chat.lastClientActivityAt,
+          lastAdminActivityAt: senderRole === 'admin' ? timestamp : chat.lastAdminActivityAt,
           adminTypingAt: senderRole === 'admin' ? null : chat.adminTypingAt,
           clientTypingAt: senderRole === 'client' ? null : chat.clientTypingAt,
-          messages: [
-            ...chat.messages,
-            {
-              id: `CHAT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              senderRole,
-              senderName,
-              text:
-                normalizedText ||
-                (senderRole === 'admin'
-                  ? 'Te comparto este pedido para revisarlo.'
-                  : 'Te comparto este pedido para que lo revises.'),
-              orderReference: normalizedOrderReference,
-              createdAt: timestamp,
-            },
-          ],
+          messages: [...chat.messages, newMessage],
         }
       })
+    }
 
-      nextChatsForServer = nextChats;
+    updateState((current) => {
       const client = current.clients.find((entry) => entry.id === clientId)
       
       const nextNormalizedState = {
         ...current,
-        chats: nextChats,
+        chats: generateNextChats(current.clients, current.chats),
         auditLog:
           senderRole === 'admin' && client
             ? appendAuditEntry(current.auditLog, senderName, 'respondio el chat de', client.businessName)
@@ -1237,7 +1233,7 @@ export function AppDataProvider({ children }) {
                   'Content-Type': 'application/json',
                   'Authorization': `Bearer ${session.token}` 
                 },
-                body: JSON.stringify({ chats: nextChatsForServer }),
+                body: JSON.stringify({ chats: generateNextChats(state.clients, state.chats) }),
             })
             .then(() => {
               setTimeout(() => { isUpdatingRef.current = false; }, 500);

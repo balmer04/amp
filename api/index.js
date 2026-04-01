@@ -77,10 +77,10 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     await initDB();
     const { email, password } = req.body;
-    
+
     const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email.trim().toLowerCase()]);
     const user = rows[0];
-    
+
     if (!user || !bcrypt.compareSync(password, user.password)) {
       return res.status(401).json({ ok: false, message: 'Credenciales inválidas.' });
     }
@@ -98,9 +98,9 @@ app.get('/api/state', authenticateToken, async (req, res) => {
     await initDB();
     const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
     if (rows.length > 0) {
-       res.json({ ok: true, state: JSON.parse(rows[0].state_json) });
+      res.json({ ok: true, state: JSON.parse(rows[0].state_json) });
     } else {
-       res.json({ ok: true, state: null });
+      res.json({ ok: true, state: null });
     }
   } catch (error) {
     res.status(500).json({ ok: false, message: 'Error consultando el estado' });
@@ -112,14 +112,14 @@ app.post('/api/state', authenticateToken, requireAdmin, async (req, res) => {
     await initDB();
     const stateJson = JSON.stringify(req.body.state);
     const { rows } = await pool.query('SELECT id FROM app_state WHERE id = 1');
-    
+
     if (rows.length > 0) {
       await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [stateJson]);
     } else {
       await pool.query('INSERT INTO app_state (id, state_json) VALUES (1, $1)', [stateJson]);
     }
     res.json({ ok: true });
-  } catch(error) {
+  } catch (error) {
     res.status(500).json({ ok: false, message: 'Error guardando el estado' });
   }
 });
@@ -132,7 +132,7 @@ app.post('/api/client/order', authenticateToken, async (req, res) => {
     if (!order || !Array.isArray(order.items) || order.items.length === 0) {
       return res.status(400).json({ error: 'Invalid order payload' });
     }
-    
+
     const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
     if (rows.length === 0) return res.status(500).json({ error: 'No state found' });
     const currentState = JSON.parse(rows[0].state_json);
@@ -148,12 +148,12 @@ app.post('/api/client/order', authenticateToken, async (req, res) => {
 
     order.status = 'Pendiente';
     order.total = recalculatedTotal;
-    
+
     currentState.orders = [order, ...currentState.orders];
     await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [JSON.stringify(currentState)]);
-    
+
     res.json({ ok: true, state: currentState });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/client/chat', authenticateToken, async (req, res) => {
@@ -162,21 +162,27 @@ app.post('/api/client/chat', authenticateToken, async (req, res) => {
     await initDB();
     const { chats } = req.body;
     if (!Array.isArray(chats)) return res.status(400).json({ error: 'Invalid chats payload' });
-    
+
     const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
     if (rows.length === 0) return res.status(500).json({ error: 'No state found' });
-    
+
     let currentState = JSON.parse(rows[0].state_json);
     const userClient = currentState.clients.find(c => c.email === req.user.email);
     if (!userClient) return res.status(403).json({ error: 'Client not found' });
-    
+
     const incomingOwnChat = chats.find(c => c.clientId === userClient.id);
     if (incomingOwnChat) {
-      currentState.chats = currentState.chats.map(chat => chat.clientId === userClient.id ? incomingOwnChat : chat);
+      if (!currentState.chats) currentState.chats = [];
+      const chatIndex = currentState.chats.findIndex(chat => chat.clientId === userClient.id);
+      if (chatIndex !== -1) {
+        currentState.chats[chatIndex] = incomingOwnChat;
+      } else {
+        currentState.chats.push(incomingOwnChat);
+      }
     }
     await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [JSON.stringify(currentState)]);
     res.json({ ok: true, state: currentState });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, res) => {
@@ -192,10 +198,10 @@ app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, 
     const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
     if (rows.length === 0) return res.status(500).json({ ok: false, error: 'DB empty' });
     const state = JSON.parse(rows[0].state_json);
-    
+
     const client = state.clients.find(c => c.id === clientId);
     if (!client) return res.status(404).json({ ok: false, error: 'Client not found' });
-    
+
     const clientOrders = state.orders.filter(o => o.clientId === clientId);
     const totalSpent = clientOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
     const daysWithoutBuying = client.lastPurchase
@@ -257,7 +263,7 @@ const executeTool = async (functionName, args, pool) => {
   if (functionName === 'get_inactive_clients') {
     const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const inactive = state.clients.filter(client => {
-      const lastOrder = state.orders.filter(o => o.clientId === client.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))[0];
+      const lastOrder = state.orders.filter(o => o.clientId === client.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
       return !lastOrder || new Date(lastOrder.createdAt) < thirtyDaysAgo;
     });
     if (inactive.length === 0) return "Todos ingresaron pedidos recientemente.";
@@ -271,7 +277,7 @@ const executeTool = async (functionName, args, pool) => {
   }
   if (functionName === 'get_inventory_replenishment_suggestions') {
     const suggestions = state.products.filter(p => (p.currentStock ?? 0) < 20).slice(0, 5);
-    if(suggestions.length === 0) return "Stock saludable.";
+    if (suggestions.length === 0) return "Stock saludable.";
     return `SUGERENCIAS COMPRA:\n` + suggestions.map(s => `- ${s.name} (Quedan ${s.currentStock})`).join('\n');
   }
   if (functionName === 'update_client_status') {
@@ -283,9 +289,9 @@ const executeTool = async (functionName, args, pool) => {
   }
   if (functionName === 'search_product') {
     const q = (args.query || '').toLowerCase();
-    const hits = state.products.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0,3);
-    if(hits.length===0) return "No hallado.";
-    return `RESULTADOS:\n` + hits.map(p=> `- ${p.name} ($${p.price}) stock: ${p.currentStock}`).join('\n');
+    const hits = state.products.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0, 3);
+    if (hits.length === 0) return "No hallado.";
+    return `RESULTADOS:\n` + hits.map(p => `- ${p.name} ($${p.price}) stock: ${p.currentStock}`).join('\n');
   }
   return "Herramienta desconocida";
 };
@@ -297,16 +303,16 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
   if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Falta cloudflare vars' });
 
   await initDB();
-  const SYSTEM_PROMPT_ADMIN = `Eres el ASISTENTE OPERATIVO de Andrés Merino Pinturería. Ayudas al administrador. Solo puedes usar UNA herramienta por vez. Responde amigable, nunca JSON crudo.`;
+  const SYSTEM_PROMPT_ADMIN = `Eres el ASISTENTE OPERATIVO de Andrés Merino Pinturería. Ayudas al administrador. Responde amigable, nunca JSON crudo.`;
   const SYSTEM_PROMPT_CLIENTE = `Eres el ASISTENTE DE VENTAS de Andrés Merino Pinturería. Ayudas a los clientes.`;
-  
+
   const systemPrompt = userRole === 'admin' ? SYSTEM_PROMPT_ADMIN : SYSTEM_PROMPT_CLIENTE;
   const tools = userRole === 'admin' ? ADMIN_TOOLS : CLIENT_TOOLS;
   const model = '@cf/meta/llama-3.1-8b-instruct';
 
   try {
     const cleanMessages = req.body.messages.filter(m => m.role !== 'system');
-    
+
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
@@ -318,11 +324,11 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
       return res.status(response.status).json({ ok: false, error: 'Cloudflare devolvió error: ' + errText });
     }
     let data = await response.json();
-    
+
     if (data.result.tool_calls && data.result.tool_calls.length > 0) {
       const toolCall = data.result.tool_calls[0];
       const toolResult = await executeTool(toolCall.name, toolCall.arguments, pool);
-      
+
       const secondResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
@@ -336,7 +342,7 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
       });
       data = await secondResponse.json();
     }
-    
+
     res.json({ ok: true, result: { ...data.result, response: data.result.response || "" } });
   } catch (err) {
     console.error("AI Catch:", err);
