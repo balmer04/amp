@@ -9,6 +9,7 @@ const { Pool } = pg;
 // Vercel inyecta automáticamente esta variable si enlazaste Supabase
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
 const app = express();
@@ -84,8 +85,8 @@ app.post('/api/auth/login', async (req, res) => {
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '12h' });
     res.json({ ok: true, token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ ok: false, message: 'Error interno en el login' });
+    console.error("Login Error:", error);
+    res.status(500).json({ ok: false, message: 'Error interno en el login: ' + (error.message || "Unknown error") });
   }
 });
 
