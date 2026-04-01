@@ -3,6 +3,7 @@ import cors from 'cors';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { SYSTEM_PROMPT_ADMIN, SYSTEM_PROMPT_CLIENTE } from '../shared/aiPrompts.js';
 
 // Evita que Node.js rechace el certificado de Supabase
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -518,4 +519,83 @@ to their sales rep or the appropriate channel.
 });
 
 // Exportación que Vercel utiliza para instanciar el servidor Serverless
+async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools }) {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+
+  if (req.user.role !== requiredRole) {
+    return res.status(403).json({ ok: false, error: 'Rol no autorizado para este asistente.' });
+  }
+
+  if (!accountId || !apiToken) {
+    return res.status(500).json({ ok: false, error: 'Falta cloudflare vars' });
+  }
+
+  try {
+    await initDB();
+    const model = '@cf/meta/llama-3.1-8b-instruct';
+    const incomingMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const cleanMessages = incomingMessages.filter((message) => message.role !== 'system');
+
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'system', content: systemPrompt }, ...cleanMessages],
+        tools,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ ok: false, error: 'Cloudflare devolvio error: ' + errText });
+    }
+
+    let data = await response.json();
+
+    if (data.result.tool_calls && data.result.tool_calls.length > 0) {
+      const toolCall = data.result.tool_calls[0];
+      const toolResult = await executeTool(toolCall.name, toolCall.arguments, pool);
+
+      const secondResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...cleanMessages,
+            {
+              role: 'user',
+              content: `[Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolvio:\n${toolResult}\nResponde a mi pedido usando esto.]`,
+            },
+          ],
+        }),
+      });
+
+      data = await secondResponse.json();
+    }
+
+    return res.json({ ok: true, result: { ...data.result, response: data.result.response || "" } });
+  } catch (err) {
+    console.error("AI Catch:", err);
+    return res.status(500).json({ ok: false, error: 'Error general IA: ' + err.message });
+  }
+}
+
+app.post('/api/ai/admin/chat', authenticateToken, async (req, res) => {
+  return runSeparatedAiChat(req, res, {
+    requiredRole: 'admin',
+    systemPrompt: SYSTEM_PROMPT_ADMIN,
+    tools: ADMIN_TOOLS,
+  });
+});
+
+app.post('/api/ai/client/chat', authenticateToken, async (req, res) => {
+  return runSeparatedAiChat(req, res, {
+    requiredRole: 'client',
+    systemPrompt: SYSTEM_PROMPT_CLIENTE,
+    tools: CLIENT_TOOLS,
+  });
+});
+
 export default app;

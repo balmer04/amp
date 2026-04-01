@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 
 export function useLlamaChat(systemPrompt, token, endpoint = '/api/ai/chat') {
+  void systemPrompt;
   const [messages, setMessages]   = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError]         = useState(null);
@@ -15,11 +16,6 @@ export function useLlamaChat(systemPrompt, token, endpoint = '/api/ai/chat') {
 
     const history = [...messages, userMsg];
 
-    // Incluimos el systemPrompt si se proporcionó, para que los workers sepan el rol
-    const fullHistory = systemPrompt 
-      ? [{ role: "system", content: systemPrompt }, ...history] 
-      : history;
-
     try {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -28,7 +24,7 @@ export function useLlamaChat(systemPrompt, token, endpoint = '/api/ai/chat') {
           "Content-Type":  "application/json",
         },
         body: JSON.stringify({
-          messages: fullHistory,
+          messages: history,
         }),
       });
 
