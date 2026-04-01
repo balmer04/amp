@@ -62,10 +62,8 @@ TONO Y FORMATO:
 // ── Componente ─────────────────────────────────────────────────────────────
 export default function ChatAdmin() {
   const { session } = useAuth();
-  // Token hardcodeado temporalmente para probar el Worker local del Admin
-  const ADMIN_SECRET_TOKEN = "super-secreto-admin-123456";
   const { messages, sendMessage, isLoading, error, clearChat } =
-    useLlamaChat(SYSTEM_PROMPT_ADMIN, ADMIN_SECRET_TOKEN, "http://localhost:8787");
+    useLlamaChat(SYSTEM_PROMPT_ADMIN, session?.token, "/api/ai/chat");
 
   const [input, setInput] = useState("");
   const bottomRef         = useRef(null);

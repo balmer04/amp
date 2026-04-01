@@ -220,5 +220,123 @@ app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// ── CONFIGURACIÓN DE IA CON HERRAMIENTAS DIRECTAS A POSTGRES ─────────────────────────────
+const ADMIN_TOOLS = [
+  {
+    name: "update_client_status",
+    description: "Cambia el estado de un cliente (ej. Activo, Inactivo, Bloqueado).",
+    parameters: {
+      type: "object",
+      properties: { customerId: { type: "integer" }, status: { type: "string" } },
+      required: ["customerId", "status"]
+    }
+  },
+  { name: "get_stock_alerts", description: "Consulta productos con stock crítico (bajo).", parameters: { type: "object", properties: {} } },
+  { name: "get_inactive_clients", description: "Busca clientes que no compraron en los últimos 30 días.", parameters: { type: "object", properties: {} } },
+  { name: "get_today_sales_summary", description: "Obtiene un resumen de los pedidos del día de hoy.", parameters: { type: "object", properties: {} } },
+  { name: "get_inventory_replenishment_suggestions", description: "Sugiere qué comprar a fábrica.", parameters: { type: "object", properties: {} } }
+];
+
+const CLIENT_TOOLS = [
+  {
+    name: "search_product",
+    description: "Busca detalles, descripción o precio de un producto específico.",
+    parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] }
+  }
+];
+
+const executeTool = async (functionName, args, pool) => {
+  const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
+  const state = rows.length > 0 ? JSON.parse(rows[0].state_json) : { products: [], clients: [], orders: [] };
+
+  if (functionName === 'get_stock_alerts') {
+    const critical = state.products.filter(p => (p.currentStock ?? 0) < 10);
+    if (critical.length === 0) return "No hay alertas de stock.";
+    return `PRODUCTOS CON STOCK BAJO (<10):\n` + critical.map(p => `- ${p.name}: ${p.currentStock}`).join('\n');
+  }
+  if (functionName === 'get_inactive_clients') {
+    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const inactive = state.clients.filter(client => {
+      const lastOrder = state.orders.filter(o => o.clientId === client.id).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))[0];
+      return !lastOrder || new Date(lastOrder.createdAt) < thirtyDaysAgo;
+    });
+    if (inactive.length === 0) return "Todos ingresaron pedidos recientemente.";
+    return `CLIENTES INACTIVOS (>30 días):\n` + inactive.map(c => `- ${c.businessName}`).join('\n');
+  }
+  if (functionName === 'get_today_sales_summary') {
+    const today = new Date().toISOString().split('T')[0];
+    const todaysOrders = state.orders.filter(o => (o.createdAt || '').startsWith(today));
+    const totalAmount = todaysOrders.reduce((acc, o) => acc + (o.total ?? 0), 0);
+    return `RESUMEN DE HOY: ${todaysOrders.length} pedidos. Facturación: $${totalAmount}.`;
+  }
+  if (functionName === 'get_inventory_replenishment_suggestions') {
+    const suggestions = state.products.filter(p => (p.currentStock ?? 0) < 20).slice(0, 5);
+    if(suggestions.length === 0) return "Stock saludable.";
+    return `SUGERENCIAS COMPRA:\n` + suggestions.map(s => `- ${s.name} (Quedan ${s.currentStock})`).join('\n');
+  }
+  if (functionName === 'update_client_status') {
+    const client = state.clients.find(c => c.id === args.customerId);
+    if (!client) return `Cliente ID ${args.customerId} no hallado.`;
+    client.status = args.status;
+    await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [JSON.stringify(state)]);
+    return `Estado de ${client.businessName} actualizado a ${args.status}.`;
+  }
+  if (functionName === 'search_product') {
+    const q = (args.query || '').toLowerCase();
+    const hits = state.products.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0,3);
+    if(hits.length===0) return "No hallado.";
+    return `RESULTADOS:\n` + hits.map(p=> `- ${p.name} ($${p.price}) stock: ${p.currentStock}`).join('\n');
+  }
+  return "Herramienta desconocida";
+};
+
+app.post('/api/ai/chat', authenticateToken, async (req, res) => {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  const userRole = req.user.role;
+  if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Falta cloudflare vars' });
+
+  await initDB();
+  const SYSTEM_PROMPT_ADMIN = `Eres el ASISTENTE OPERATIVO de Andrés Merino Pinturería. Ayudas al administrador. Solo puedes usar UNA herramienta por vez. Responde amigable, nunca JSON crudo.`;
+  const SYSTEM_PROMPT_CLIENTE = `Eres el ASISTENTE DE VENTAS de Andrés Merino Pinturería. Ayudas a los clientes.`;
+  
+  const systemPrompt = userRole === 'admin' ? SYSTEM_PROMPT_ADMIN : SYSTEM_PROMPT_CLIENTE;
+  const tools = userRole === 'admin' ? ADMIN_TOOLS : CLIENT_TOOLS;
+  const model = '@cf/meta/llama-3.1-8b-instruct';
+
+  try {
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'system', content: systemPrompt }, ...req.body.messages], tools })
+    });
+
+    if (!response.ok) return res.status(response.status).json({ ok: false, error: 'Error AI Server' });
+    let data = await response.json();
+    
+    if (data.result.tool_calls && data.result.tool_calls.length > 0) {
+      const toolCall = data.result.tool_calls[0];
+      const toolResult = await executeTool(toolCall.name, toolCall.arguments, pool);
+      
+      const secondResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...req.body.messages,
+            { role: 'user', content: `[Admin Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolvió:\n${toolResult}\nResponde a mi pedido usando esto.]` }
+          ]
+        })
+      });
+      data = await secondResponse.json();
+    }
+    
+    res.json({ ok: true, result: { ...data.result, response: data.result.response || "" } });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'Error general IA' });
+  }
+});
+
 // Exportación que Vercel utiliza para instanciar el servidor Serverless
 export default app;

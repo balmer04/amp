@@ -47,7 +47,7 @@ TONO Y FORMATO:
 export default function ChatCliente() {
   const { session } = useAuth();
   const { messages, sendMessage, isLoading, error, clearChat } =
-    useLlamaChat(SYSTEM_PROMPT_CLIENTE, session?.token, "http://localhost:8788");
+    useLlamaChat(SYSTEM_PROMPT_CLIENTE, session?.token, "/api/ai/chat");
 
   const [input, setInput] = useState("");
   const bottomRef         = useRef(null);
