@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
@@ -10,7 +10,7 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const { Pool } = pg;
 
-// Vercel inyecta automáticamente esta variable si enlazaste Supabase
+// Vercel inyecta automÃ¡ticamente esta variable si enlazaste Supabase
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,
   ssl: { rejectUnauthorized: false }
@@ -83,7 +83,7 @@ app.post('/api/auth/login', async (req, res) => {
     const user = rows[0];
 
     if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ ok: false, message: 'Credenciales inválidas.' });
+      return res.status(401).json({ ok: false, message: 'Credenciales invÃ¡lidas.' });
     }
 
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '12h' });
@@ -189,7 +189,7 @@ app.post('/api/client/chat', authenticateToken, async (req, res) => {
 app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, res) => {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Cloudflare no está configurado.' });
+  if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Cloudflare no estÃ¡ configurado.' });
 
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ ok: false, error: 'Missing clientId' });
@@ -207,10 +207,10 @@ app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, 
     const totalSpent = clientOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
     const daysWithoutBuying = client.lastPurchase
       ? Math.floor((Date.now() - new Date(client.lastPurchase.createdAt).getTime()) / (1000 * 60 * 60 * 24))
-      : 'Nunca compró';
+      : 'Nunca comprÃ³';
 
-    const systemPrompt = `Eres el ASISTENTE OPERATIVO de Andrés Merino Pinturería. Tu tarea es analizar los datos de un cliente y generar una recomendación comercial corta y directa (máximo 3 oraciones). No saludes, ve directamente a las observaciones.`;
-    const prompt = `Analiza este cliente: Nombre: ${client.businessName}. Saldo pendiente: $${client.pendingBalance ?? 0}. Cantidad de pedidos: ${clientOrders.length}. Total gastado histórico: $${totalSpent}. Días desde su última compra: ${daysWithoutBuying}. Genera tu recomendación comercial.`;
+    const systemPrompt = `Eres el ASISTENTE OPERATIVO de AndrÃ©s Merino PinturerÃ­a. Tu tarea es analizar los datos de un cliente y generar una recomendaciÃ³n comercial corta y directa (mÃ¡ximo 3 oraciones). No saludes, ve directamente a las observaciones.`;
+    const prompt = `Analiza este cliente: Nombre: ${client.businessName}. Saldo pendiente: $${client.pendingBalance ?? 0}. Cantidad de pedidos: ${clientOrders.length}. Total gastado histÃ³rico: $${totalSpent}. DÃ­as desde su Ãºltima compra: ${daysWithoutBuying}. Genera tu recomendaciÃ³n comercial.`;
 
     const model = '@cf/meta/llama-3.1-8b-instruct';
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
@@ -223,11 +223,11 @@ app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, 
     const data = await response.json();
     res.json({ ok: true, recommendation: data.result.response || data.result });
   } catch (error) {
-    res.status(500).json({ ok: false, error: 'Error al generar análisis.' });
+    res.status(500).json({ ok: false, error: 'Error al generar anÃ¡lisis.' });
   }
 });
 
-// ── CONFIGURACIÓN DE IA CON HERRAMIENTAS DIRECTAS A POSTGRES ─────────────────────────────
+// â”€â”€ CONFIGURACIÃ“N DE IA CON HERRAMIENTAS DIRECTAS A POSTGRES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ADMIN_TOOLS = [
   {
     name: "update_client_status",
@@ -238,19 +238,102 @@ const ADMIN_TOOLS = [
       required: ["customerId", "status"]
     }
   },
-  { name: "get_stock_alerts", description: "Consulta productos con stock crítico (bajo).", parameters: { type: "object", properties: {} } },
-  { name: "get_inactive_clients", description: "Busca clientes que no compraron en los últimos 30 días.", parameters: { type: "object", properties: {} } },
-  { name: "get_today_sales_summary", description: "Obtiene un resumen de los pedidos del día de hoy.", parameters: { type: "object", properties: {} } },
-  { name: "get_inventory_replenishment_suggestions", description: "Sugiere qué comprar a fábrica.", parameters: { type: "object", properties: {} } }
+  { name: "get_stock_alerts", description: "Consulta productos con stock critico (bajo).", parameters: { type: "object", properties: {} } },
+  {
+    name: "get_inactive_clients",
+    description: "Busca clientes que no compraron en los ultimos N dias.",
+    parameters: { type: "object", properties: { days_without_purchase: { type: "integer" } } }
+  },
+  {
+    name: "suggest_commercial_actions",
+    description: "Sugiere acciones comerciales concretas para clientes inactivos segun dias sin compra, saldo pendiente e historial.",
+    parameters: { type: "object", properties: { days_without_purchase: { type: "integer" } } }
+  },
+  {
+    name: "get_inventory_snapshot",
+    description: "Devuelve una vista rapida del stock actual, incluyendo productos criticos, bajos y con mayor stock.",
+    parameters: { type: "object", properties: { limit: { type: "integer" } } }
+  },
+  {
+    name: "get_month_sales_summary",
+    description: "Resume ventas de un mes especifico. months_ago 0 es el mes actual, 1 el anterior, 2 hace dos meses.",
+    parameters: { type: "object", properties: { months_ago: { type: "integer" } } }
+  },
+  {
+    name: "get_monthly_sales_history",
+    description: "Devuelve ventas agregadas por mes para analizar tendencia reciente.",
+    parameters: { type: "object", properties: { months: { type: "integer" } } }
+  },
+  {
+    name: "forecast_purchase_recommendations",
+    description: "Proyecta demanda futura en base a ventas recientes y sugiere cuanto comprar a fabrica por producto.",
+    parameters: {
+      type: "object",
+      properties: {
+        months: { type: "integer" },
+        horizon_months: { type: "integer" },
+        limit: { type: "integer" }
+      }
+    }
+  },
+  { name: "get_today_sales_summary", description: "Obtiene un resumen de los pedidos del dia de hoy.", parameters: { type: "object", properties: {} } },
+  { name: "get_inventory_replenishment_suggestions", description: "Sugiere que comprar a fabrica.", parameters: { type: "object", properties: {} } }
 ];
 
 const CLIENT_TOOLS = [
   {
     name: "search_product",
-    description: "Busca detalles, descripción o precio de un producto específico.",
+    description: "Busca detalles, descripciÃ³n o precio de un producto especÃ­fico.",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] }
   }
 ];
+
+function getMonthWindow(monthsAgo = 0) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() - monthsAgo + 1, 1);
+  return { start, end };
+}
+
+function getOrdersInWindow(orders, start, end) {
+  return orders.filter((order) => {
+    const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
+    return createdAt && createdAt >= start && createdAt < end;
+  });
+}
+
+function getDeliveredLikeOrders(orders) {
+  return orders.filter((order) => !['Cancelado'].includes(order.status));
+}
+
+function aggregateSalesByProduct(orders) {
+  const sales = new Map();
+
+  orders.forEach((order) => {
+    const createdAt = order?.createdAt ?? null;
+
+    (order.items ?? []).forEach((item) => {
+      const current = sales.get(item.productId) ?? {
+        productId: item.productId,
+        qty: 0,
+        revenue: 0,
+        orders: 0,
+        lastSoldAt: createdAt,
+      };
+
+      current.qty += Number(item.qty) || 0;
+      current.orders += 1;
+      current.lastSoldAt = createdAt ?? current.lastSoldAt;
+      sales.set(item.productId, current);
+    });
+  });
+
+  return sales;
+}
+
+function formatMonthLabel(date) {
+  return new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(date);
+}
 
 const executeTool = async (functionName, args, pool) => {
   const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
@@ -262,19 +345,185 @@ const executeTool = async (functionName, args, pool) => {
     return `PRODUCTOS CON STOCK BAJO (<10):\n` + critical.map(p => `- ${p.name}: ${p.currentStock}`).join('\n');
   }
   if (functionName === 'get_inactive_clients') {
-    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const inactive = state.clients.filter(client => {
+    const requestedDays = Math.max(Number(args?.days_without_purchase) || 30, 1);
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - requestedDays);
+    const inactive = state.clients.filter((client) => {
       const lastOrder = state.orders.filter(o => o.clientId === client.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-      return !lastOrder || new Date(lastOrder.createdAt) < thirtyDaysAgo;
+      return !lastOrder || new Date(lastOrder.createdAt) < thresholdDate;
     });
     if (inactive.length === 0) return "Todos ingresaron pedidos recientemente.";
-    return `CLIENTES INACTIVOS (>30 días):\n` + inactive.map(c => `- ${c.businessName}`).join('\n');
+    return `CLIENTES INACTIVOS (>${requestedDays} dias):\n` + inactive.map((client) => {
+      const clientOrders = state.orders.filter((order) => order.clientId === client.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const lastOrder = clientOrders[0] ?? null;
+      const lastPurchaseLabel = lastOrder?.createdAt ? new Date(lastOrder.createdAt).toLocaleDateString('es-AR') : 'Sin compras';
+      return `- ${client.businessName} | saldo pendiente: $${Number(client.pendingBalance ?? 0)} | ultima compra: ${lastPurchaseLabel} | pedidos: ${clientOrders.length}`;
+    }).join('\n');
+  }
+  if (functionName === 'suggest_commercial_actions') {
+    const requestedDays = Math.max(Number(args?.days_without_purchase) || 30, 1);
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - requestedDays);
+    const inactiveClients = state.clients
+      .map((client) => {
+        const clientOrders = state.orders.filter((order) => order.clientId === client.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const lastOrder = clientOrders[0] ?? null;
+        const totalSpent = clientOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+        return { client, clientOrders, lastOrder, totalSpent, isInactive: !lastOrder || new Date(lastOrder.createdAt) < thresholdDate };
+      })
+      .filter((entry) => entry.isInactive)
+      .sort((left, right) => right.totalSpent - left.totalSpent)
+      .slice(0, 5);
+    if (inactiveClients.length === 0) return `No detecto clientes inactivos por encima de ${requestedDays} dias para accionar ahora.`;
+    return `ACCIONES COMERCIALES SUGERIDAS (>${requestedDays} dias):\n` + inactiveClients.map(({ client, lastOrder, totalSpent, clientOrders }) => {
+      const pendingBalance = Number(client.pendingBalance ?? 0);
+      const daysSinceLastOrder = lastOrder ? Math.floor((Date.now() - new Date(lastOrder.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : requestedDays;
+      let action = 'Retomar contacto con mensaje breve y propuesta de reposicion.';
+      if (!lastOrder) {
+        action = 'Primer recontacto comercial para activar la cuenta y detectar una necesidad concreta de compra.';
+      } else if (pendingBalance > 0) {
+        action = 'Priorizar cobranza y ofrecer regularizar saldo antes de impulsar una nueva compra.';
+      } else if (daysSinceLastOrder >= 90) {
+        action = 'Hacer recuperacion fuerte con WhatsApp personalizado y seguimiento telefonico dentro de 48 hs.';
+      } else if (totalSpent > 250000 || clientOrders.length >= 5) {
+        action = 'Hacer llamado comercial con oferta de recompra o combo por volumen para reactivar la cuenta.';
+      }
+      return `- ${client.businessName}: ${action} Saldo pendiente $${pendingBalance}. Historico $${Math.round(totalSpent)}.`;
+    }).join('\n');
+  }
+  if (functionName === 'get_inventory_snapshot') {
+    const limit = Math.max(Number(args?.limit) || 5, 1);
+    const products = [...state.products];
+    const critical = products
+      .filter((product) => Number(product.currentStock ?? 0) <= 5)
+      .sort((left, right) => Number(left.currentStock ?? 0) - Number(right.currentStock ?? 0))
+      .slice(0, limit);
+    const low = products
+      .filter((product) => Number(product.currentStock ?? 0) > 5 && Number(product.currentStock ?? 0) <= 20)
+      .sort((left, right) => Number(left.currentStock ?? 0) - Number(right.currentStock ?? 0))
+      .slice(0, limit);
+    const high = products
+      .sort((left, right) => Number(right.currentStock ?? 0) - Number(left.currentStock ?? 0))
+      .slice(0, limit);
+
+    const formatProducts = (items) =>
+      items.length === 0
+        ? '- Sin datos relevantes'
+        : items.map((product) => `- ${product.name}: stock ${Number(product.currentStock ?? 0)} | sku ${product.sku}`).join('\n');
+
+    return [
+      'FOTO DE STOCK:',
+      'Criticos (<=5):',
+      formatProducts(critical),
+      'Bajos (6 a 20):',
+      formatProducts(low),
+      'Mayor stock:',
+      formatProducts(high),
+    ].join('\n');
+  }
+  if (functionName === 'get_month_sales_summary') {
+    const monthsAgo = Math.max(Number(args?.months_ago) || 0, 0);
+    const { start, end } = getMonthWindow(monthsAgo);
+    const orders = getDeliveredLikeOrders(getOrdersInWindow(state.orders, start, end));
+    const totalRevenue = orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+    const uniqueClients = new Set(orders.map((order) => order.clientId)).size;
+    const salesByProduct = [...aggregateSalesByProduct(orders).values()]
+      .sort((left, right) => right.qty - left.qty)
+      .slice(0, 5)
+      .map((entry) => {
+        const product = state.products.find((item) => item.id === entry.productId);
+        return `- ${product?.name ?? `Producto ${entry.productId}`}: ${entry.qty} unidades`;
+      })
+      .join('\n');
+
+    return [
+      `VENTAS DE ${formatMonthLabel(start).toUpperCase()}:`,
+      `- Pedidos: ${orders.length}`,
+      `- Facturacion: $${Math.round(totalRevenue)}`,
+      `- Clientes con compra: ${uniqueClients}`,
+      'Top productos:',
+      salesByProduct || '- Sin ventas en el periodo',
+    ].join('\n');
+  }
+  if (functionName === 'get_monthly_sales_history') {
+    const months = Math.min(Math.max(Number(args?.months) || 6, 1), 12);
+    const lines = [];
+
+    for (let offset = months - 1; offset >= 0; offset -= 1) {
+      const { start, end } = getMonthWindow(offset);
+      const orders = getDeliveredLikeOrders(getOrdersInWindow(state.orders, start, end));
+      const totalRevenue = orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+      const totalUnits = orders.reduce(
+        (sum, order) => sum + (order.items ?? []).reduce((itemSum, item) => itemSum + (Number(item.qty) || 0), 0),
+        0,
+      );
+      lines.push(`- ${formatMonthLabel(start)}: pedidos ${orders.length} | unidades ${totalUnits} | facturacion $${Math.round(totalRevenue)}`);
+    }
+
+    return ['HISTORIAL MENSUAL DE VENTAS:', ...lines].join('\n');
+  }
+  if (functionName === 'forecast_purchase_recommendations') {
+    const months = Math.min(Math.max(Number(args?.months) || 3, 1), 12);
+    const horizonMonths = Math.min(Math.max(Number(args?.horizon_months) || 1, 1), 3);
+    const limit = Math.max(Number(args?.limit) || 8, 1);
+    const relevantOrders = [];
+
+    for (let offset = 0; offset < months; offset += 1) {
+      const { start, end } = getMonthWindow(offset);
+      relevantOrders.push(...getDeliveredLikeOrders(getOrdersInWindow(state.orders, start, end)));
+    }
+
+    const aggregatedSales = [...aggregateSalesByProduct(relevantOrders).values()]
+      .map((entry) => {
+        const product = state.products.find((item) => item.id === entry.productId);
+        const avgMonthlyUnits = entry.qty / months;
+        const projectedDemand = Math.ceil(avgMonthlyUnits * horizonMonths);
+        const currentStock = Number(product?.currentStock ?? 0);
+        const suggestedPurchase = Math.max(projectedDemand - currentStock, 0);
+        const recommendedDate = new Date();
+        recommendedDate.setDate(recommendedDate.getDate() + 7);
+
+        return {
+          productName: product?.name ?? `Producto ${entry.productId}`,
+          sku: product?.sku ?? 'N/D',
+          currentStock,
+          avgMonthlyUnits,
+          historicalUnits: entry.qty,
+          monthsAnalyzed: months,
+          projectedDemand,
+          suggestedPurchase,
+          recommendedDate: recommendedDate.toLocaleDateString('es-AR'),
+        };
+      })
+      .filter((entry) => entry.projectedDemand > 0)
+      .sort((left, right) => {
+        if (right.suggestedPurchase !== left.suggestedPurchase) {
+          return right.suggestedPurchase - left.suggestedPurchase;
+        }
+        return right.projectedDemand - left.projectedDemand;
+      })
+      .slice(0, limit);
+
+    if (aggregatedSales.length === 0) {
+      return 'No hay suficiente historial reciente para proyectar compras a fabrica.';
+    }
+
+    const reliabilityNote =
+      months < 6
+        ? `ADVERTENCIA: la proyeccion usa solo ${months} mes/es de historia, asi que es menos confiable y conviene validarla con el equipo comercial.`
+        : `Con ${months} meses de historia, la proyeccion tiene mejor base comparativa, aunque sigue siendo una estimacion y no una garantia.`;
+
+    return [
+      `PROYECCION DE COMPRA A FABRICA (${months} meses analizados, horizonte ${horizonMonths} mes/es):`,
+      reliabilityNote,
+      ...aggregatedSales.map((entry) => `- ${entry.productName} | sku ${entry.sku} | historial usado ${entry.historicalUnits} unidades en ${entry.monthsAnalyzed} mes/es | promedio mensual ${entry.avgMonthlyUnits.toFixed(1)} | stock actual ${entry.currentStock} | demanda proyectada ${entry.projectedDemand} | sugerido comprar ${entry.suggestedPurchase} | fecha sugerida para pedir ${entry.recommendedDate}`),
+    ].join('\n');
   }
   if (functionName === 'get_today_sales_summary') {
     const today = new Date().toISOString().split('T')[0];
     const todaysOrders = state.orders.filter(o => (o.createdAt || '').startsWith(today));
     const totalAmount = todaysOrders.reduce((acc, o) => acc + (o.total ?? 0), 0);
-    return `RESUMEN DE HOY: ${todaysOrders.length} pedidos. Facturación: $${totalAmount}.`;
+    return `RESUMEN DE HOY: ${todaysOrders.length} pedidos. Facturacion: $${totalAmount}.`;
   }
   if (functionName === 'get_inventory_replenishment_suggestions') {
     const suggestions = state.products.filter(p => (p.currentStock ?? 0) < 20).slice(0, 5);
@@ -304,13 +553,13 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
   if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Falta cloudflare vars' });
 
   await initDB();
-  const SYSTEM_PROMPT_ADMIN = `# INTERNAL ASSISTANT — ANDRÉS MERINO PINTURERÍA CRM
+  const SYSTEM_PROMPT_ADMIN = `# INTERNAL ASSISTANT â€” ANDRÃ‰S MERINO PINTURERÃA CRM
 
 ## ROLE AND CONTEXT
 
-You are the internal management assistant for the Andrés Merino Pinturería CRM. You operate exclusively for authorized internal users. Your purpose is to support commercial and operational decision-making based on available system data.
+You are the internal management assistant for the AndrÃ©s Merino PinturerÃ­a CRM. You operate exclusively for authorized internal users. Your purpose is to support commercial and operational decision-making based on available system data.
 
-**Business:** Wholesale paint distributor with 20 branches across Argentina. Primary customers: hardware stores (ferreterías) and paint shops (pintolerías).
+**Business:** Wholesale paint distributor with 20 branches across Argentina. Primary customers: hardware stores (ferreterÃ­as) and paint shops (pintolerÃ­as).
 
 **Available system data:** customers, orders, inventory, accounts receivable, zone-based sales reps, purchase history, outstanding debts, and sales metrics.
 
@@ -383,13 +632,13 @@ The authenticated user has **full system access**. This includes:
 - Do not repeat unnecessary information or ask clarifying questions if context is already sufficient.
 - Never share one customer's information with another user without explicit administrator authorization.
 - When facing ambiguity, ask only the minimum clarification needed to proceed.`;
-  const SYSTEM_PROMPT_CLIENTE = `# CUSTOMER-FACING ASSISTANT — ANDRÉS MERINO PINTURERÍA
+  const SYSTEM_PROMPT_CLIENTE = `# CUSTOMER-FACING ASSISTANT â€” ANDRÃ‰S MERINO PINTURERÃA
 
 ## ROLE AND CONTEXT
 
-You are the virtual assistant for Andrés Merino Pinturería, a wholesale paint distributor
-with 20 branches across Argentina. You assist registered wholesale customers —
-hardware stores (ferreterías), paint shops (pinturerías), and distributors.
+You are the virtual assistant for AndrÃ©s Merino PinturerÃ­a, a wholesale paint distributor
+with 20 branches across Argentina. You assist registered wholesale customers â€”
+hardware stores (ferreterÃ­as), paint shops (pinturerÃ­as), and distributors.
 
 You operate within the **customer-facing portal only**. You have no access to internal
 systems, other customers' data, pricing databases, stock levels, or any administrative
@@ -428,7 +677,7 @@ to their sales rep or the appropriate channel.
 - If the customer asks about a specific product, ask for the product code or
   commercial name to help identify it.
 - Always clarify that final pricing and availability are confirmed by their
-  assigned sales rep or through the portal — never state prices as definitive.
+  assigned sales rep or through the portal â€” never state prices as definitive.
 
 ### 2. Order Status
 - Help the customer navigate to "My Orders" in their dashboard for real-time status.
@@ -460,7 +709,7 @@ to their sales rep or the appropriate channel.
 - **Never discuss internal business data** (sales figures, vendor quotas,
   branch performance, etc.).
 - If a question falls outside the customer's own dashboard scope,
-  respond with: "That information isn't available here — I'd recommend
+  respond with: "That information isn't available here â€” I'd recommend
   reaching out to your sales rep directly."
 
 ---
@@ -471,7 +720,7 @@ to their sales rep or the appropriate channel.
   and a professional but approachable tone.
 - Use short bullet lists when they help clarity.
 - If you don't have an exact answer, say so clearly and offer the right channel to get it.
-- Keep responses focused and concise — the customer is here to operate, not to browse.
+- Keep responses focused and concise â€” the customer is here to operate, not to browse.
 - Never volunteer information the customer didn't ask for.`;
 
   const systemPrompt = userRole === 'admin' ? SYSTEM_PROMPT_ADMIN : SYSTEM_PROMPT_CLIENTE;
@@ -489,7 +738,7 @@ to their sales rep or the appropriate channel.
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ ok: false, error: 'Cloudflare devolvió error: ' + errText });
+      return res.status(response.status).json({ ok: false, error: 'Cloudflare devolviÃ³ error: ' + errText });
     }
     let data = await response.json();
 
@@ -504,7 +753,7 @@ to their sales rep or the appropriate channel.
           messages: [
             { role: 'system', content: systemPrompt },
             ...cleanMessages,
-            { role: 'user', content: `[Admin Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolvió:\n${toolResult}\nResponde a mi pedido usando esto.]` }
+            { role: 'user', content: `[Admin Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolviÃ³:\n${toolResult}\nResponde a mi pedido usando esto.]` }
           ]
         })
       });
@@ -518,7 +767,7 @@ to their sales rep or the appropriate channel.
   }
 });
 
-// Exportación que Vercel utiliza para instanciar el servidor Serverless
+// ExportaciÃ³n que Vercel utiliza para instanciar el servidor Serverless
 async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools }) {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -599,3 +848,4 @@ app.post('/api/ai/client/chat', authenticateToken, async (req, res) => {
 });
 
 export default app;
+
