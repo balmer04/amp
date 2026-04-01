@@ -266,12 +266,14 @@
   width: fit-content;
   margin-top: 0.35rem;
   border: 1px solid rgba(18, 50, 129, 0.14);
-  border-radius: 999px;
+  border-radius: 0.35rem;
   padding: 0.75rem 1rem;
   background: #f4f7fb;
   color: #123281;
   font-weight: 700;
   text-decoration: none;
+  cursor: pointer;
+  font: inherit;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
@@ -284,6 +286,39 @@
   border-color: rgba(18, 50, 129, 0.26);
   box-shadow: 0 12px 24px rgba(18, 50, 129, 0.1);
   background: #eef3fb;
+}
+
+.request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.request-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.request-form-actions button {
+  flex: 1;
+}
+
+.secondary-button {
+  background: transparent;
+  border: 1px solid rgba(18, 50, 129, 0.2);
+  color: #123281;
+  border-radius: 0.35rem;
+  padding: 0.8rem 1rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.secondary-button:hover {
+  background: rgba(18, 50, 129, 0.05);
 }
 
 .dashboard-page {

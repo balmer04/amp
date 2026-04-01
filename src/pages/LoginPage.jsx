@@ -19,6 +19,16 @@ export function LoginPage() {
   })
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  const [showRequestForm, setShowRequestForm] = useState(false)
+  const [isRequestSubmitting, setIsRequestSubmitting] = useState(false)
+  const [requestSent, setRequestSent] = useState(false)
+  const [requestData, setRequestData] = useState({
+    nombre: '',
+    cuit: '',
+    telefono: '',
+    email: '',
+  })
 
   if (isAuthenticated) {
     return <Navigate to={session.role === 'admin' ? '/admin' : '/cliente'} replace />
@@ -56,6 +66,25 @@ export function LoginPage() {
     event.preventDefault()
     setError('')
     submitLogin()
+  }
+
+  const handleRequestChange = (event) => {
+    const { name, value } = event.target
+    setRequestData((current) => ({ ...current, [name]: value }))
+  }
+
+  const handleRequestSubmit = (event) => {
+    event.preventDefault()
+    setIsRequestSubmitting(true)
+    setTimeout(() => {
+      setIsRequestSubmitting(false)
+      setRequestSent(true)
+      setTimeout(() => {
+        setShowRequestForm(false)
+        setRequestSent(false)
+        setRequestData({ nombre: '', cuit: '', telefono: '', email: '' })
+      }, 3500)
+    }, 1200)
   }
 
   const handleQuickAccess = async (role) => {
@@ -150,16 +179,53 @@ export function LoginPage() {
           <div className="login-request-card">
             <p className="login-request-eyebrow">Acceso mayorista</p>
             <h3>Solicitá tu cuenta profesional</h3>
-            <p>
-              Si tenés una pinturería, empresa o perfil profesional, pedí acceso al
-              canal mayorista de Andrés Merino.
-            </p>
-            <a
-              className="login-request-button"
-              href="mailto:admin@amprev.com?subject=Solicitud%20de%20cuenta%20profesional"
-            >
-              Solicitar cuenta profesional
-            </a>
+            
+            {!showRequestForm ? (
+              <>
+                <p>
+                  Si tenés una pinturería, empresa o perfil profesional, pedí acceso al
+                  canal mayorista de Andrés Merino.
+                </p>
+                <button
+                  type="button"
+                  className="login-request-button"
+                  onClick={() => setShowRequestForm(true)}
+                >
+                  Solicitar cuenta profesional
+                </button>
+              </>
+            ) : requestSent ? (
+              <p style={{ color: '#10b981', fontWeight: '600', marginTop: '1rem' }}>
+                ¡Solicitud enviada! Nos pondremos en contacto pronto.
+              </p>
+            ) : (
+              <form className="request-form" onSubmit={handleRequestSubmit}>
+                <label className="field">
+                  <span>Nombre o Razón Social</span>
+                  <input type="text" name="nombre" placeholder="Pinturería Ej." value={requestData.nombre} onChange={handleRequestChange} required />
+                </label>
+                <label className="field">
+                  <span>CUIT / RUT</span>
+                  <input type="text" name="cuit" placeholder="XX-XXXXXXXX-X" value={requestData.cuit} onChange={handleRequestChange} required />
+                </label>
+                <label className="field">
+                  <span>Teléfono</span>
+                  <input type="tel" name="telefono" placeholder="11 1234 5678" value={requestData.telefono} onChange={handleRequestChange} required />
+                </label>
+                <label className="field">
+                  <span>Email</span>
+                  <input type="email" name="email" placeholder="correo@ejemplo.com" value={requestData.email} onChange={handleRequestChange} required />
+                </label>
+                <div className="request-form-actions">
+                  <button type="button" className="secondary-button" onClick={() => setShowRequestForm(false)}>
+                    Cancelar
+                  </button>
+                  <button type="submit" className="primary-button" disabled={isRequestSubmitting}>
+                    {isRequestSubmitting ? 'Enviando...' : 'Enviar Solicitud'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       </section>
