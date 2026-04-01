@@ -5,6 +5,7 @@ import { useAppData } from '../context/AppDataContext'
 import {
   buildOrderRows,
   buildQuantityMap,
+  calculatePointsFromTotal,
   calculateShippingCost,
   formatCurrency,
   formatDate,
@@ -233,18 +234,52 @@ function ClientSidebar({
   )
 }
 
-function ClientPageHeader({ activeTab, cartCount, onRepeatLastOrder, onCartClick, settings }) {
+function ClientPageHeader({
+  activeTab,
+  client,
+  cartCount,
+  onRepeatLastOrder,
+  onCartClick,
+  settings,
+  onEditAccount,
+}) {
   const meta = CLIENT_VIEW_META[activeTab] ?? CLIENT_VIEW_META.inicio
+  const showQuickActions = activeTab !== 'checkout'
+  const greetingDate = new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date())
+  const greetingHour = new Date().getHours()
+  const greetingLabel =
+    greetingHour < 12 ? 'Buen dia' : greetingHour < 19 ? 'Buenas tardes' : 'Buenas noches'
 
   return (
     <header className="client-page-header">
       <div>
-        <span className="client-card-eyebrow">{meta.eyebrow}</span>
-        <h1>{meta.title}</h1>
+        {activeTab === 'inicio' ? (
+          <div className="client-page-greeting">
+            <h1>
+              {greetingLabel}, {client.businessName || client.name}
+            </h1>
+            <p>{greetingDate}</p>
+          </div>
+        ) : (
+          <>
+            <span className="client-card-eyebrow">{meta.eyebrow}</span>
+            <h1>{meta.title}</h1>
+            <p>{meta.description}</p>
+          </>
+        )}
       </div>
 
-      {activeTab === 'inicio' ? (
+      {showQuickActions ? (
         <div className="client-page-actions">
+          {activeTab === 'cuenta' ? (
+            <button type="button" className="client-page-action-btn" onClick={onEditAccount}>
+              Editar mis datos
+            </button>
+          ) : null}
           {settings.clientPanel?.enableRepeatLastOrder ? (
             <button type="button" className="client-page-action-btn" onClick={onRepeatLastOrder}>
               ↻ Repetir ultimo pedido
@@ -255,23 +290,111 @@ function ClientPageHeader({ activeTab, cartCount, onRepeatLastOrder, onCartClick
             <span className="client-page-action-badge">{cartCount}</span>
           </button>
         </div>
-      ) : (
-        <p>{meta.description}</p>
-      )}
+      ) : null}
     </header>
   )
 }
 
-function ClientChatPage({ chat, draft, onDraftChange, onSend, unreadCount, typingLabel }) {
+function ChatOrderReference({ reference, onOpen }) {
+  if (!reference?.orderId) {
+    return null
+  }
+
+  return (
+    <button type="button" className="chat-order-reference" onClick={onOpen}>
+      <span className="chat-order-reference-label">Pedido vinculado</span>
+      <strong>{reference.orderCode ?? reference.orderId}</strong>
+      <small>
+        {reference.status} · {formatCurrency(reference.total ?? 0)}
+      </small>
+    </button>
+  )
+}
+
+function ClientChatOrderModal({ order, client, products, onClose }) {
+  if (!order) {
+    return null
+  }
+
+  const rows = buildOrderRows(order.items ?? [], products, client?.tier)
+  const orderStatus = getLatestOrderStatusMeta(order.status)
+
+  return (
+    <div className="client-modal-backdrop" role="presentation">
+      <div className="client-modal-card client-order-reference-modal">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Pedido referenciado</span>
+            <h2>{order.id}</h2>
+          </div>
+          <span className={`order-status-pill ${orderStatus.tone}`}>{order.status}</span>
+        </div>
+
+        <div className="client-order-reference-grid">
+          <div className="client-order-reference-item">
+            <span>Fecha</span>
+            <strong>{formatDateTime(order.createdAt)}</strong>
+          </div>
+          <div className="client-order-reference-item">
+            <span>Entrega</span>
+            <strong>{order.deliveryType}</strong>
+          </div>
+          <div className="client-order-reference-item">
+            <span>Destino</span>
+            <strong>{order.branch || client?.address || 'A confirmar'}</strong>
+          </div>
+          <div className="client-order-reference-item">
+            <span>Total</span>
+            <strong>{formatCurrency(order.total)}</strong>
+          </div>
+        </div>
+
+        <div className="client-order-reference-list">
+          {rows.map((row) => (
+            <div key={row.productId} className="client-order-reference-row">
+              <div>
+                <strong>{row.name}</strong>
+                <small>{row.sku}</small>
+              </div>
+              <span>x{row.qty}</span>
+              <strong>{formatCurrency(row.totalValue)}</strong>
+            </div>
+          ))}
+        </div>
+
+        <div className="client-modal-actions">
+          <button type="button" className="client-modal-btn secondary" onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ClientChatPage({
+  chat,
+  onSend,
+  onTypingChange,
+  unreadCount,
+  typingLabel,
+  orderOptions,
+  selectedOrderId,
+  onSelectedOrderChange,
+  onOpenOrderReference,
+}) {
   return (
     <section className="client-account-layout">
       <ClientChatCard
         chat={chat}
-        draft={draft}
-        onDraftChange={onDraftChange}
         onSend={onSend}
+        onTypingChange={onTypingChange}
         unreadCount={unreadCount}
         typingLabel={typingLabel}
+        orderOptions={orderOptions}
+        selectedOrderId={selectedOrderId}
+        onSelectedOrderChange={onSelectedOrderChange}
+        onOpenOrderReference={onOpenOrderReference}
       />
     </section>
   )
@@ -313,6 +436,12 @@ function ClientAiPage() {
 }
 
 function QuantitySelector({ value, onDecrease, onIncrease, onChange, compact = false }) {
+  const [draftValue, setDraftValue] = useState(String(value ?? 0))
+
+  useEffect(() => {
+    setDraftValue(String(value ?? 0))
+  }, [value])
+
   return (
     <div className={compact ? 'qty-selector compact' : 'qty-selector'}>
       <button type="button" onClick={onDecrease} aria-label="Restar cantidad">
@@ -323,8 +452,30 @@ function QuantitySelector({ value, onDecrease, onIncrease, onChange, compact = f
         min="0"
         step="1"
         inputMode="numeric"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+        title="Escribi la cantidad con el teclado"
+        onFocus={(event) => {
+          event.target.select()
+        }}
+        onChange={(event) => {
+          const nextRawValue = event.target.value
+          setDraftValue(nextRawValue)
+
+          if (nextRawValue === '') {
+            return
+          }
+
+          onChange(nextRawValue)
+        }}
+        onBlur={() => {
+          if (draftValue === '') {
+            setDraftValue('0')
+            onChange('0')
+            return
+          }
+
+          onChange(draftValue)
+        }}
         aria-label="Cantidad del producto"
       />
       <button type="button" onClick={onIncrease} aria-label="Sumar cantidad">
@@ -390,28 +541,85 @@ function ViewSwitcher({ viewMode, onChange }) {
   )
 }
 
+function getCatalogStockMeta(product) {
+  const stock = Number(product?.currentStock) || 0
+
+  if (stock <= 0) {
+    return { label: 'Sin stock', tone: 'danger' }
+  }
+
+  if (stock <= 5) {
+    return { label: 'Pocas unidades', tone: 'warning' }
+  }
+
+  return { label: 'Disponible', tone: 'success' }
+}
+
+function normalizeCategoryTone(category) {
+  const normalized = String(category ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
+  if (normalized.includes('latex')) return 'latex'
+  if (normalized.includes('esmalte')) return 'esmalte'
+  if (normalized.includes('impermeabil')) return 'impermeabilizante'
+  if (normalized.includes('herramient')) return 'herramientas'
+  return 'general'
+}
+
+function getCategoryMonogram(product) {
+  const categoryWords = String(product?.category ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+
+  if (categoryWords.length > 0) {
+    return categoryWords.map((word) => word[0]).join('').toUpperCase()
+  }
+
+  return String(product?.code ?? product?.sku ?? 'PR').slice(0, 2).toUpperCase()
+}
+
 function ProductCard({ product, tierName, settings, quantity, onDecrease, onIncrease, onChange, onAdd }) {
   const discountedPrice = getDiscountedProductPrice(product, tierName, settings)
-  const effectiveOldPrice = discountedPrice !== product.price ? product.price : product.oldPrice
+  const oldPriceCandidate =
+    discountedPrice !== product.price ? Number(product.price) : Number(product.oldPrice)
+  const effectiveOldPrice =
+    Number.isFinite(oldPriceCandidate) && oldPriceCandidate > discountedPrice
+      ? oldPriceCandidate
+      : null
+  const presentation = product.detail || 'Presentacion a confirmar'
+  const stockMeta = getCatalogStockMeta(product)
+  const categoryTone = normalizeCategoryTone(product.category)
+  const categoryMonogram = getCategoryMonogram(product)
 
   return (
     <article className="product-card">
       <div className={`product-card-visual ${product.accent}`}>
         {product.badge ? <span className="product-badge">{product.badge}</span> : null}
-        <span className="product-code">{product.code}</span>
+        <span className={`product-category-chip ${categoryTone}`}>{categoryMonogram}</span>
       </div>
       <div className="product-card-body">
         <h3>{product.name}</h3>
         <p>
           {product.detail} · {product.brand}
         </p>
+        <div className="product-meta-line">
+          <span>Presentacion: {presentation}</span>
+          <span>Min. 1</span>
+        </div>
+        <div className="product-stock-inline">
+          <span className={`stock-badge compact ${stockMeta.tone}`}>{stockMeta.label}</span>
+        </div>
         <div className="product-price-block">
           <strong>{formatCurrency(discountedPrice)}</strong>
           {effectiveOldPrice ? <span>{formatCurrency(effectiveOldPrice)}</span> : null}
         </div>
-        <small className="product-subtotal">
-          Subtotal: {formatCurrency(discountedPrice * quantity)}
-        </small>
+        {quantity > 0 ? (
+          <small className="product-subtotal">Subtotal: {formatCurrency(discountedPrice * quantity)}</small>
+        ) : null}
         {product.note ? <small>{product.note}</small> : null}
       </div>
       <div className="product-card-footer">
@@ -430,25 +638,40 @@ function ProductCard({ product, tierName, settings, quantity, onDecrease, onIncr
 
 function ProductListRow({ product, tierName, settings, quantity, onDecrease, onIncrease, onChange, onAdd }) {
   const discountedPrice = getDiscountedProductPrice(product, tierName, settings)
-  const effectiveOldPrice = discountedPrice !== product.price ? product.price : product.oldPrice
+  const oldPriceCandidate =
+    discountedPrice !== product.price ? Number(product.price) : Number(product.oldPrice)
+  const effectiveOldPrice =
+    Number.isFinite(oldPriceCandidate) && oldPriceCandidate > discountedPrice
+      ? oldPriceCandidate
+      : null
+  const presentation = product.detail || 'Presentacion a confirmar'
+  const stockMeta = getCatalogStockMeta(product)
+  const categoryTone = normalizeCategoryTone(product.category)
+  const categoryMonogram = getCategoryMonogram(product)
 
   return (
     <article className={quantity > 0 ? 'product-list-row selected' : 'product-list-row'}>
       <div className={`product-list-thumb ${product.accent}`}>
-        <span className="product-code small">{product.code}</span>
+        <span className={`product-category-chip small ${categoryTone}`}>{categoryMonogram}</span>
       </div>
       <div className="product-list-info">
         <strong>{product.name}</strong>
         <span>
           SKU {product.sku} · {product.brand}
         </span>
+        <small className="product-list-meta">
+          Presentacion: {presentation} · Min. 1
+        </small>
+        <div className="product-list-stock">
+          <span className={`stock-badge compact ${stockMeta.tone}`}>{stockMeta.label}</span>
+        </div>
       </div>
       <div className="product-list-price">
         <strong>{formatCurrency(discountedPrice)}</strong>
         {effectiveOldPrice ? <span>{formatCurrency(effectiveOldPrice)}</span> : null}
-        <small className="product-subtotal">
-          Subtotal: {formatCurrency(discountedPrice * quantity)}
-        </small>
+        {quantity > 0 ? (
+          <small className="product-subtotal">Subtotal: {formatCurrency(discountedPrice * quantity)}</small>
+        ) : null}
       </div>
       <AddToOrderControl
         quantity={quantity}
@@ -474,8 +697,7 @@ function CatalogToolbar({
   onBrandChange,
   viewMode,
   onViewModeChange,
-  onRepeatLastOrder,
-  showRepeatLastOrder,
+  onOpenQuickOrder,
 }) {
   return (
     <div className="catalog-toolbar">
@@ -492,7 +714,7 @@ function CatalogToolbar({
         <select value={activeCategory} onChange={(event) => onCategoryChange(event.target.value)}>
           {categories.map((category) => (
             <option key={category} value={category}>
-              {category}
+              {category === 'Todos' ? 'Productos' : category}
             </option>
           ))}
         </select>
@@ -502,25 +724,77 @@ function CatalogToolbar({
         <select value={brand} onChange={(event) => onBrandChange(event.target.value)}>
           {brands.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {option === 'Todas' ? 'Marcas' : option}
             </option>
           ))}
         </select>
       </label>
 
       <ViewSwitcher viewMode={viewMode} onChange={onViewModeChange} />
+      <button
+        type="button"
+        className="repeat-order-btn quick-order-full-btn"
+        onClick={onOpenQuickOrder}
+        aria-label="Pedido rapido"
+        title="Pedido rapido"
+      >
+        Pedido rapido
+      </button>
+    </div>
+  )
+}
 
-      {showRepeatLastOrder ? (
-        <button
-          type="button"
-          className="repeat-order-btn repeat-order-icon-btn"
-          onClick={onRepeatLastOrder}
-          aria-label="Repetir ultimo pedido"
-          title="Repetir ultimo pedido"
-        >
-          <span aria-hidden="true">↻</span>
-        </button>
-      ) : null}
+function QuickOrderModal({ draft, summary, onDraftChange, onClose, onApply }) {
+  return (
+    <div className="client-modal-backdrop" role="presentation">
+      <div className="client-modal-card quick-order-modal">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Pedido rapido</span>
+            <h2>Cargar varios productos</h2>
+            <p className="checkout-subtitle">
+              Pega una lista con formato <strong>SKU,cantidad</strong> o <strong>SKU TAB cantidad</strong>, una linea por producto.
+            </p>
+          </div>
+        </div>
+
+        <div className="client-form-field">
+          <span>Listado</span>
+          <textarea
+            className="quick-order-textarea"
+            rows="10"
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder={'ALB-LTX-INT-20,24\nSIN-LTX-EXT-20,12\n20600,48'}
+          />
+        </div>
+
+        <div className="quick-order-help">
+          <span>{summary.validCount} lineas validas</span>
+          {summary.invalidCount > 0 ? (
+            <strong>{summary.invalidCount} con error</strong>
+          ) : (
+            <strong>Sin errores</strong>
+          )}
+        </div>
+
+        {summary.errors.length > 0 ? (
+          <div className="quick-order-errors">
+            {summary.errors.map((error) => (
+              <span key={error}>{error}</span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="client-modal-actions">
+          <button type="button" className="client-modal-btn secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button type="button" className="client-modal-btn primary" onClick={onApply}>
+            Cargar al pedido
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -579,6 +853,7 @@ function OrderSummaryCard({ items, products, tierName, settings, onRepeatLastOrd
 }
 
 function ProductCatalog({
+  products,
   categories,
   brands,
   activeCategory,
@@ -596,18 +871,19 @@ function ProductCatalog({
   onPrevPage,
   onNextPage,
   productQuantities,
+  orderItems,
   tierName,
   settings,
   onQuantityChange,
   onAddToOrder,
   onRepeatLastOrder,
-  onBatchAddToOrder,
+  onOpenQuickOrder,
   onCheckout,
   canCheckout,
 }) {
-  const hasSelectedProducts = visibleProducts.some(
-    (product) => (productQuantities[product.id] ?? 0) > 0 && product.currentStock > 0,
-  )
+  const orderRows = buildOrderRows(orderItems, products, tierName, settings)
+  const orderSubtotal = orderRows.reduce((sum, item) => sum + item.totalValue, 0)
+  const orderUnits = orderItems.reduce((sum, item) => sum + item.qty, 0)
 
   return (
     <article className="client-panel-card product-catalog-card">
@@ -622,8 +898,7 @@ function ProductCatalog({
         onBrandChange={onBrandChange}
         viewMode={viewMode}
         onViewModeChange={onViewModeChange}
-        onRepeatLastOrder={onRepeatLastOrder}
-        showRepeatLastOrder={settings.clientPanel?.enableRepeatLastOrder}
+        onOpenQuickOrder={settings.clientPanel?.enableQuickOrder !== false ? onOpenQuickOrder : undefined}
       />
 
       <div className="product-catalog-scroll">
@@ -674,8 +949,9 @@ function ProductCatalog({
           >
             ←
           </button>
-          <span>
-            Pagina {page} de {totalPages}
+          <span className="client-pagination-meta">
+            <strong>{page}</strong>
+            <small>de {totalPages}</small>
           </span>
           <button
             type="button"
@@ -691,21 +967,25 @@ function ProductCatalog({
       ) : null}
 
       <div className="batch-action-bar">
-        <button
-          type="button"
-          className="client-primary-wide batch-action-btn"
-          onClick={onBatchAddToOrder}
-          disabled={!hasSelectedProducts}
-        >
-          Agregar seleccionados al pedido
-        </button>
+        <div className="catalog-sticky-summary">
+          <div>
+            <span>Pedido actual</span>
+            <strong>
+              {orderItems.length} productos · {orderUnits} unidades
+            </strong>
+            <small>
+              Carga las cantidades y usa el boton + de cada producto para sumarlo al pedido.
+            </small>
+          </div>
+          <strong className="catalog-sticky-total">{formatCurrency(orderSubtotal)}</strong>
+        </div>
         <button
           type="button"
           className="client-secondary-wide batch-secondary-btn"
           onClick={onCheckout}
           disabled={!canCheckout}
         >
-          Continuar al pago
+          Ver pedido y continuar
         </button>
       </div>
     </article>
@@ -713,6 +993,8 @@ function ProductCatalog({
 }
 
 function HomeSection({
+  client,
+  clientOrders,
   products,
   loyaltyStatus,
   tierBenefitSummary,
@@ -730,6 +1012,77 @@ function HomeSection({
     latestOrder?.history?.[0]?.createdAt ?? latestOrder?.dispatchedAt ?? latestOrder?.createdAt ?? null
   const featuredOffers = products.filter((product) => product.badge || product.oldPrice)
   const promoProducts = featuredOffers.length > 0 ? featuredOffers : products.slice(0, 3)
+  const orderTrackerSteps = [
+    {
+      key: 'received',
+      label: 'Recibido',
+      isActive: Boolean(latestOrder),
+    },
+    {
+      key: 'approved',
+      label: 'Confirmado',
+      isActive: ['Aprobado', 'Preparando', 'Despachado'].includes(latestOrder?.status),
+    },
+    {
+      key: 'preparing',
+      label: 'Preparando',
+      isActive: ['Preparando', 'Despachado'].includes(latestOrder?.status),
+    },
+    {
+      key: 'dispatched',
+      label: latestOrder?.deliveryType === 'Retiro en sucursal' ? 'Listo' : 'Despachado',
+      isActive: latestOrder?.status === 'Despachado',
+    },
+  ]
+  const unlockedCategoryBenefits = tierBenefitSummary.categoryDiscounts
+    .filter((item) => Number(item.percent) > 0)
+    .slice(0, 3)
+  const shippingBenefit =
+    tierBenefitSummary.shippingMode === 'free'
+      ? { value: '100%', label: 'Envio gratis' }
+      : tierBenefitSummary.shippingMode === 'discounted' &&
+          Number(tierBenefitSummary.shippingDiscountPercent) > 0
+        ? {
+            value: `${tierBenefitSummary.shippingDiscountPercent}%`,
+            label: 'Envio con descuento',
+          }
+        : null
+  const hasUnlockedBenefits = unlockedCategoryBenefits.length > 0 || Boolean(shippingBenefit)
+  const frequentProducts = useMemo(() => {
+    const productUsage = new Map()
+
+    clientOrders.forEach((order) => {
+      order.items?.forEach((item) => {
+        const current = productUsage.get(item.productId) ?? {
+          qty: 0,
+          orders: 0,
+        }
+
+        productUsage.set(item.productId, {
+          qty: current.qty + (Number(item.qty) || 0),
+          orders: current.orders + 1,
+        })
+      })
+    })
+
+    return Array.from(productUsage.entries())
+      .map(([productId, usage]) => {
+        const product = products.find((entry) => entry.id === productId)
+
+        if (!product) {
+          return null
+        }
+
+        return {
+          product,
+          qty: usage.qty,
+          orders: usage.orders,
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.qty - a.qty || b.orders - a.orders)
+      .slice(0, 3)
+  }, [clientOrders, products])
 
   return (
     <section className="client-home-layout">
@@ -746,7 +1099,9 @@ function HomeSection({
               <article key={product.id} className="promo-card">
                 <div className={`product-card-visual ${product.accent}`}>
                   {product.badge ? <span className="product-badge">{product.badge}</span> : null}
-                  <span className="product-code">{product.code}</span>
+                  <span className={`product-category-chip ${normalizeCategoryTone(product.category)}`}>
+                    {getCategoryMonogram(product)}
+                  </span>
                 </div>
                 <div className="promo-card-body">
                   <strong>{product.name}</strong>
@@ -754,12 +1109,26 @@ function HomeSection({
                       {product.detail} · {product.brand}
                   </span>
                   <div className="product-price-block">
-                    <strong>{formatCurrency(getDiscountedProductPrice(product, loyaltyStatus.currentTier.name, settings))}</strong>
-                    {getDiscountedProductPrice(product, loyaltyStatus.currentTier.name, settings) !== product.price ? (
-                      <span>{formatCurrency(product.price)}</span>
-                    ) : product.oldPrice ? (
-                      <span>{formatCurrency(product.oldPrice)}</span>
-                    ) : null}
+                    {(() => {
+                      const discountedPrice = getDiscountedProductPrice(
+                        product,
+                        loyaltyStatus.currentTier.name,
+                        settings,
+                      )
+                      const oldPriceCandidate =
+                        discountedPrice !== product.price ? Number(product.price) : Number(product.oldPrice)
+                      const effectiveOldPrice =
+                        Number.isFinite(oldPriceCandidate) && oldPriceCandidate > discountedPrice
+                          ? oldPriceCandidate
+                          : null
+
+                      return (
+                        <>
+                          <strong>{formatCurrency(discountedPrice)}</strong>
+                          {effectiveOldPrice ? <span>{formatCurrency(effectiveOldPrice)}</span> : null}
+                        </>
+                      )
+                    })()}
                   </div>
                 </div>
               </article>
@@ -767,11 +1136,42 @@ function HomeSection({
           </div>
 
           <div className="promo-actions promo-actions-bottom">
-            <button type="button" className="client-primary-wide promo-action-btn" onClick={onGoToOrderPage}>
+            <button type="button" className="client-primary-wide promo-action-btn promo-action-btn--brand" onClick={onGoToOrderPage}>
               Ir a armar pedido
             </button>
           </div>
         </article>
+
+        {frequentProducts.length > 0 ? (
+          <article className="client-panel-card frequent-products-card">
+            <div className="client-card-header">
+              <div>
+                <span className="client-card-eyebrow">Recompra</span>
+                <h2>Productos que soles pedir</h2>
+              </div>
+            </div>
+
+            <div className="frequent-products-list">
+              {frequentProducts.map(({ product, qty, orders }) => (
+                <article key={product.id} className="frequent-product-row">
+                  <span className={`product-category-chip small ${normalizeCategoryTone(product.category)}`}>
+                    {getCategoryMonogram(product)}
+                  </span>
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>
+                      SKU {product.sku} · {product.brand}
+                    </span>
+                  </div>
+                  <div className="frequent-product-meta">
+                    <strong>{qty.toLocaleString('es-AR')} u.</strong>
+                    <span>{orders} pedidos</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </article>
+        ) : null}
 
         {settings.clientPanel?.showCurrentOrderCard ? (
         <article className="client-panel-card">
@@ -797,7 +1197,22 @@ function HomeSection({
               </span>
             </div>
 
-            <div className="tracking-status-card">
+            <div className="home-order-progress">
+              {orderTrackerSteps.map((step, index) => (
+                <div
+                  key={step.key}
+                  className={step.isActive ? 'home-order-progress-step active' : 'home-order-progress-step'}
+                >
+                  <span className="home-order-progress-dot">{index + 1}</span>
+                  <strong>{step.label}</strong>
+                  {index !== orderTrackerSteps.length - 1 ? (
+                    <span className="home-order-progress-line" aria-hidden="true" />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            <div className="tracking-status-card tracking-status-card--strong">
               <strong>{latestOrderState.title}</strong>
               <span>{latestOrderState.detail}</span>
               <small>
@@ -833,28 +1248,34 @@ function HomeSection({
             </div>
           </div>
 
-          <div className="discount-grid">
-            {tierBenefitSummary.categoryDiscounts.slice(0, 3).map((item) => (
-              <div key={item.category} className="discount-item">
-                <strong>{item.percent}%</strong>
-                <span>{item.category}</span>
-              </div>
-            ))}
-            <div className="discount-item">
-              <strong>
-                {tierBenefitSummary.shippingMode === 'free'
-                  ? '100%'
-                  : `${tierBenefitSummary.shippingDiscountPercent}%`}
-              </strong>
-              <span>
-                {tierBenefitSummary.shippingMode === 'free'
-                  ? 'Envio gratis'
-                  : tierBenefitSummary.shippingMode === 'discounted'
-                    ? 'Envio con descuento'
-                    : 'Envio sin beneficio'}
-              </span>
+          {hasUnlockedBenefits ? (
+            <div className="discount-grid">
+              {unlockedCategoryBenefits.map((item) => (
+                <div key={item.category} className="discount-item">
+                  <strong>{item.percent}%</strong>
+                  <span>{item.category}</span>
+                </div>
+              ))}
+              {shippingBenefit ? (
+                <div className="discount-item">
+                  <strong>{shippingBenefit.value}</strong>
+                  <span>{shippingBenefit.label}</span>
+                </div>
+              ) : null}
             </div>
-          </div>
+          ) : (
+            <div className="discount-empty-state">
+              <strong>Subi de nivel para desbloquear descuentos</strong>
+              <span>
+                {loyaltyStatus.nextTier
+                  ? `Te faltan ${loyaltyStatus.pointsToNext.toLocaleString('es-AR')} pts para ${loyaltyStatus.nextTier.name}.`
+                  : 'Ya alcanzaste el nivel mas alto del programa.'}
+              </span>
+              <div className="discount-empty-progress">
+                <span style={{ width: `${loyaltyStatus.progress}%` }}></span>
+              </div>
+            </div>
+          )}
         </article>
         ) : null}
 
@@ -897,153 +1318,197 @@ function CheckoutPage({
   const shippingCost =
     deliveryMethod === 'shipping' ? calculateShippingCost(6500, client.tier, settings) : 0
   const total = subtotal + shippingCost
+  const pointsToEarn = calculatePointsFromTotal(total)
 
   return (
-    <section className="client-checkout-layout">
-      <article className="client-panel-card checkout-main-card">
-        <div className="client-card-header">
-          <div>
-            <span className="client-card-eyebrow">Checkout</span>
-            <h2>Finalizar compra</h2>
-            <p className="checkout-subtitle">
-              Revisa entrega, pago y datos de facturacion antes de confirmar.
-            </p>
-          </div>
-          <button type="button" className="repeat-order-btn" onClick={onBackToOrder}>
-            Volver al pedido
-          </button>
-        </div>
+    <section className="client-checkout-page">
+      <header className="client-checkout-header">
+        <img
+          src="/branding/amp-cart.svg"
+          alt="Cadena de Pinturerias"
+          className="client-checkout-logo"
+        />
+        <button type="button" className="client-checkout-back-btn" onClick={onBackToOrder}>
+          Volver al pedido
+        </button>
+      </header>
 
-        <div className="checkout-section">
-          <h3>1. Forma de entrega</h3>
-          <div className="checkout-option-grid">
-            {deliveryOptions.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className={
-                  deliveryMethod === option.id
-                    ? 'checkout-option-card active'
-                    : 'checkout-option-card'
-                }
-                onClick={() => setDeliveryMethod(option.id)}
-              >
-                <strong>{option.title}</strong>
-                <span>{option.text}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="checkout-section">
-          <h3>2. Forma de pago</h3>
-          <div className="checkout-option-grid">
-            {paymentMethods.map((method) => (
-              <button
-                key={method.id}
-                type="button"
-                className={
-                  paymentMethod === method.id
-                    ? 'checkout-option-card active'
-                    : 'checkout-option-card'
-                }
-                onClick={() => setPaymentMethod(method.id)}
-              >
-                <strong>{method.title}</strong>
-                <span>{method.text}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="checkout-section">
-          <h3>3. Facturacion y observaciones</h3>
-          <div className="checkout-form-grid">
-            <label className="checkout-field">
-              <span>Razon social / Nombre</span>
-              <input
-                type="text"
-                value={billingName}
-                onChange={(event) => setBillingName(event.target.value)}
-              />
-            </label>
-            <label className="checkout-field">
-              <span>CUIT / DNI</span>
-              <input
-                type="text"
-                value={taxId}
-                onChange={(event) => setTaxId(event.target.value)}
-              />
-            </label>
-            <label className="checkout-field checkout-field-full">
-              <span>Observaciones del pedido</span>
-              <textarea
-                rows="4"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-              />
-            </label>
-          </div>
-        </div>
-      </article>
-
-      <aside className="client-home-sidebar">
-        <article className="client-panel-card checkout-summary-card">
-          <div className="client-card-header">
+      <section className="client-checkout-layout">
+        <article className="client-panel-card checkout-main-card">
+          <div className="client-card-header checkout-header">
             <div>
-              <span className="client-card-eyebrow">Resumen final</span>
-              <h2>Tu compra</h2>
+              <span className="client-card-eyebrow">Checkout</span>
+              <h2>Finalizar compra</h2>
+              <p className="checkout-subtitle">
+                Revisa entrega, pago y datos de facturacion antes de confirmar.
+              </p>
             </div>
           </div>
 
-          <div className="order-summary-list">
-            {orderRows.map((item) => (
-              <div key={item.productId} className="order-item">
-                <div>
-                  <strong>
-                    {item.name} x{item.qty}
-                  </strong>
-                  <span>{item.unitPrice} c/u</span>
-                </div>
-                <strong>{formatCurrency(item.totalValue)}</strong>
-              </div>
-            ))}
-          </div>
-
-          <div className="checkout-total-block">
-            <div className="checkout-total-row">
-              <span>Subtotal</span>
-              <strong>{formatCurrency(subtotal)}</strong>
+          <div className="checkout-stepper" aria-label="Pasos del checkout">
+            <div className="checkout-step active">
+              <span>1</span>
+              <strong>Entrega</strong>
             </div>
-            <div className="checkout-total-row">
-              <span>Entrega</span>
-              <strong>{shippingCost === 0 ? 'A convenir en sucursal' : formatCurrency(shippingCost)}</strong>
+            <div className="checkout-step-line" />
+            <div className="checkout-step active">
+              <span>2</span>
+              <strong>Pago</strong>
             </div>
-            <div className="checkout-total-row final">
-              <span>Total</span>
-              <strong>{formatCurrency(total)}</strong>
+            <div className="checkout-step-line" />
+            <div className="checkout-step active current">
+              <span>3</span>
+              <strong>Revision final</strong>
             </div>
           </div>
 
-          <button
-            type="button"
-            className="client-primary-wide"
-            onClick={() =>
-              onConfirmOrder({
-                deliveryType: deliveryMethod,
-                paymentMethod,
-                branch: client.preferredBranch,
-                billingName,
-                taxId,
-                notes,
-                shippingCost,
-              })
-            }
-          >
-            Confirmar compra
-          </button>
+          <div className="checkout-section">
+            <h3>1. Forma de entrega</h3>
+            <div className="checkout-option-grid">
+              {deliveryOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={
+                    deliveryMethod === option.id
+                      ? 'checkout-option-card active'
+                      : 'checkout-option-card'
+                  }
+                  onClick={() => setDeliveryMethod(option.id)}
+                >
+                  <span className="checkout-option-check" aria-hidden="true">
+                    {deliveryMethod === option.id ? '✓' : ''}
+                  </span>
+                  <strong>{option.title}</strong>
+                  <span>{option.text}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="checkout-section">
+            <h3>2. Forma de pago</h3>
+            <div className="checkout-option-grid">
+              {paymentMethods.map((method) => (
+                <button
+                  key={method.id}
+                  type="button"
+                  className={
+                    paymentMethod === method.id
+                      ? 'checkout-option-card active'
+                      : 'checkout-option-card'
+                  }
+                  onClick={() => setPaymentMethod(method.id)}
+                >
+                  <span className="checkout-option-check" aria-hidden="true">
+                    {paymentMethod === method.id ? '✓' : ''}
+                  </span>
+                  <strong>{method.title}</strong>
+                  <span>{method.text}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="checkout-section">
+            <h3>3. Facturacion y observaciones</h3>
+            <div className="checkout-form-grid">
+              <label className="checkout-field">
+                <span>Razon social / Nombre</span>
+                <input
+                  type="text"
+                  value={billingName}
+                  onChange={(event) => setBillingName(event.target.value)}
+                />
+              </label>
+              <label className="checkout-field">
+                <span>CUIT / DNI</span>
+                <input
+                  type="text"
+                  value={taxId}
+                  onChange={(event) => setTaxId(event.target.value)}
+                />
+              </label>
+              <label className="checkout-field checkout-field-full">
+                <span>Observaciones del pedido</span>
+                <textarea
+                  rows="4"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                />
+              </label>
+            </div>
+          </div>
         </article>
-      </aside>
+
+        <aside className="checkout-summary-side">
+          <article className="client-panel-card checkout-summary-card">
+            <div className="client-card-header">
+              <div>
+                <span className="client-card-eyebrow">Resumen final</span>
+                <h2>Tu compra</h2>
+              </div>
+            </div>
+
+            <div className="order-summary-list">
+              {orderRows.map((item) => (
+                <div key={item.productId} className="order-item">
+                  <div>
+                    <strong>
+                      {item.name} x{item.qty}
+                    </strong>
+                    <span>{item.unitPrice} c/u</span>
+                  </div>
+                  <strong>{formatCurrency(item.totalValue)}</strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="checkout-total-block">
+              <div className="checkout-total-row">
+                <span>Subtotal</span>
+                <strong>{formatCurrency(subtotal)}</strong>
+              </div>
+              <div className="checkout-total-row">
+                <span>Entrega</span>
+                <strong>
+                  {shippingCost === 0 ? 'A convenir en sucursal' : formatCurrency(shippingCost)}
+                </strong>
+              </div>
+              <div className="checkout-total-row">
+                <span>IVA</span>
+                <strong>Incluido en los precios</strong>
+              </div>
+              <div className="checkout-total-row final">
+                <span>Total</span>
+                <strong>{formatCurrency(total)}</strong>
+              </div>
+            </div>
+
+            <div className="checkout-points-earned">
+              <span>★ Vas a ganar {pointsToEarn.toLocaleString('es-AR')} puntos con este pedido</span>
+            </div>
+
+            <button
+              type="button"
+              className="client-primary-wide checkout-confirm-btn"
+              onClick={() =>
+                onConfirmOrder({
+                  deliveryType: deliveryMethod,
+                  paymentMethod,
+                  branch: client.preferredBranch,
+                  billingName,
+                  taxId,
+                  notes,
+                  shippingCost,
+                })
+              }
+            >
+              Confirmar compra
+            </button>
+          </article>
+        </aside>
+      </section>
     </section>
   )
 }
@@ -1159,8 +1624,23 @@ function AccountEditModal({ formValues, onChange, onClose, onSave }) {
   )
 }
 
-function ClientChatCard({ chat, draft, onDraftChange, onSend, unreadCount, typingLabel }) {
+function ClientChatCard({
+  chat,
+  onSend,
+  onTypingChange,
+  unreadCount,
+  typingLabel,
+  orderOptions,
+  selectedOrderId,
+  onSelectedOrderChange,
+  onOpenOrderReference,
+}) {
   const threadRef = useRef(null)
+  const textareaRef = useRef(null)
+  const typingTimeoutRef = useRef(null)
+  const [isOrderPickerOpen, setIsOrderPickerOpen] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
 
   useEffect(() => {
     const element = threadRef.current
@@ -1172,8 +1652,63 @@ function ClientChatCard({ chat, draft, onDraftChange, onSend, unreadCount, typin
     element.scrollTop = element.scrollHeight
   }, [chat.messages.length, typingLabel])
 
+  useEffect(() => {
+    const element = threadRef.current
+
+    if (!element) {
+      return
+    }
+
+    const handleScroll = () => {
+      const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+      setShowJumpToLatest(distanceToBottom > 120)
+    }
+
+    handleScroll()
+    element.addEventListener('scroll', handleScroll)
+
+    return () => {
+      element.removeEventListener('scroll', handleScroll)
+    }
+  }, [chat.messages.length])
+
+  useEffect(() => {
+    const element = textareaRef.current
+
+    if (!element) {
+      return
+    }
+
+    element.style.height = '0px'
+    element.style.height = `${Math.min(element.scrollHeight, 132)}px`
+  }, [draft])
+
+  useEffect(() => {
+    const isTyping = draft.trim().length > 0
+
+    if (isTyping) {
+      onTypingChange(true)
+    }
+
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current)
+    }
+
+    typingTimeoutRef.current = window.setTimeout(() => {
+      onTypingChange(false)
+    }, 2200)
+
+    return () => {
+      if (typingTimeoutRef.current) {
+        window.clearTimeout(typingTimeoutRef.current)
+      }
+    }
+  }, [draft])
+
+  const selectedOrder = orderOptions.find((order) => order.id === selectedOrderId) ?? null
+
   return (
-    <article className="client-panel-card account-span-two">
+    <article className="client-panel-card account-span-two client-chat-card">
       <div className="client-card-header">
         <div>
           <span className="client-card-eyebrow">Soporte</span>
@@ -1186,45 +1721,136 @@ function ClientChatCard({ chat, draft, onDraftChange, onSend, unreadCount, typin
         ) : null}
       </div>
 
+      <div className="client-chat-statusbar">
+        <div className="client-chat-identity">
+          <strong>Administracion — Andres Merino</strong>
+          <span className="client-chat-presence">
+            <span className="client-chat-presence-dot"></span>
+            En linea
+          </span>
+        </div>
+      </div>
+
       <div ref={threadRef} className="client-chat-thread">
-        {chat.messages.length > 0 ? (
-          chat.messages.map((message) => (
-            <div
-              key={message.id}
-              className={
-                message.senderRole === 'admin'
-                  ? 'client-chat-message admin'
-                  : 'client-chat-message client'
-              }
-            >
-              <strong>{message.senderName}</strong>
-              <p>{message.text}</p>
-              <small>{formatDateTime(message.createdAt)}</small>
+        <div className="client-chat-thread-inner">
+          {chat.messages.length > 0 ? (
+            chat.messages.map((message) => (
+              <div
+                key={message.id}
+                className={
+                  message.senderRole === 'admin'
+                    ? 'client-chat-message admin'
+                    : 'client-chat-message client'
+                }
+              >
+                <strong>{message.senderName}</strong>
+                <p>{message.text}</p>
+                {message.orderReference ? (
+                  <ChatOrderReference
+                    reference={message.orderReference}
+                    onOpen={() => onOpenOrderReference(message.orderReference.orderId)}
+                  />
+                ) : null}
+                <small>{formatDateTime(message.createdAt)}</small>
+              </div>
+            ))
+          ) : (
+            <div className="client-chat-empty">
+              Abriste el canal general con administracion. Podes escribir tu consulta cuando quieras.
             </div>
-          ))
-        ) : (
-          <div className="client-chat-empty">
-            Abriste el canal general con administracion. Podes escribir tu consulta cuando quieras.
-          </div>
-        )}
-        {typingLabel ? <div className="client-chat-typing">{typingLabel}</div> : null}
+          )}
+          {typingLabel ? <div className="client-chat-typing">{typingLabel}</div> : null}
+        </div>
+        {showJumpToLatest ? (
+          <button
+            type="button"
+            className="client-chat-jump-btn"
+            aria-label="Ir al ultimo mensaje"
+            title="Ir al ultimo mensaje"
+            onClick={() => {
+              const element = threadRef.current
+
+              if (!element) {
+                return
+              }
+
+              element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
+            }}
+          >
+            ↓
+          </button>
+        ) : null}
       </div>
 
       <div className="client-chat-composer">
-        <textarea
-          value={draft}
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              onSend()
-            }
-          }}
-          placeholder="Escribi tu mensaje para administracion..."
-        />
-        <button type="button" className="client-primary-wide client-chat-send" onClick={onSend}>
-          Enviar mensaje
-        </button>
+        {orderOptions.length > 0 ? (
+          <div className="client-chat-tools">
+            <button
+              type="button"
+              className={isOrderPickerOpen ? 'client-chat-attach-btn active' : 'client-chat-attach-btn'}
+              onClick={() => setIsOrderPickerOpen((current) => !current)}
+            >
+              Adjuntar pedido
+            </button>
+
+            {selectedOrder ? (
+              <button
+                type="button"
+                className="client-chat-selected-order"
+                onClick={() => onOpenOrderReference(selectedOrder.id)}
+              >
+                {selectedOrder.id} · {formatCurrency(selectedOrder.total)}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isOrderPickerOpen && orderOptions.length > 0 ? (
+          <div className="client-chat-order-picker">
+            {orderOptions.slice(0, 6).map((order) => (
+              <button
+                key={order.id}
+                type="button"
+                className={selectedOrderId === order.id ? 'client-chat-order-option active' : 'client-chat-order-option'}
+                onClick={() => {
+                  onSelectedOrderChange(selectedOrderId === order.id ? '' : order.id)
+                  setIsOrderPickerOpen(false)
+                }}
+              >
+                <strong>{order.id}</strong>
+                <span>{order.status}</span>
+                <small>{formatCurrency(order.total)}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="client-chat-composer-row">
+          <textarea
+            ref={textareaRef}
+            rows="1"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                onSend(draft)
+                setDraft('')
+              }
+            }}
+            placeholder="Escribi tu mensaje para administracion..."
+          />
+          <button
+            type="button"
+            className="client-chat-send-inline"
+            onClick={() => {
+              onSend(draft)
+              setDraft('')
+            }}
+          >
+            Enviar
+          </button>
+        </div>
       </div>
     </article>
   )
@@ -1234,65 +1860,135 @@ function AccountPage({
   session,
   client,
   loyaltyStatus,
+  tierBenefitSummary,
   latestOrder,
+  clientOrders,
   previousOrders,
   orderItems,
-  onLogout,
-  onEditAccount,
 }) {
-  const currentStatus =
-    latestOrder?.status ?? (orderItems.length > 0 ? 'Pendiente' : 'Sin pedido activo')
+  const hasActiveOrder = Boolean(latestOrder)
+  const activeOrderStatus = latestOrder?.status ?? (orderItems.length > 0 ? 'Pendiente' : 'Sin pedido')
   const accountMessage = loyaltyStatus.nextTier
     ? `Tu nivel actual: ${loyaltyStatus.currentTier.name} - Te faltan ${loyaltyStatus.pointsToNext.toLocaleString(
         'es-AR',
       )} pts para alcanzar el nivel ${loyaltyStatus.nextTier.name}.`
     : 'Tu nivel actual: Estratégico - Alcanzaste el nivel premium maximo.'
+  const activeBenefits = [
+    ...(tierBenefitSummary.shippingMode === 'free'
+      ? ['Envio gratis']
+      : tierBenefitSummary.shippingMode === 'discounted'
+        ? [`Envio con ${tierBenefitSummary.shippingDiscountPercent}% off`]
+        : []),
+    ...tierBenefitSummary.categoryDiscounts
+      .filter((benefit) => benefit.percent > 0)
+      .map((benefit) => `${benefit.category} ${benefit.percent}%`),
+  ].slice(0, 6)
+  const monthlyOrders = clientOrders.filter((order) => {
+    const orderDate = new Date(order.createdAt)
+    const now = new Date()
+    return (
+      orderDate.getMonth() === now.getMonth() &&
+      orderDate.getFullYear() === now.getFullYear()
+    )
+  })
+  const monthlySpend = monthlyOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0)
+  const monthlyPoints = monthlyOrders.reduce(
+    (sum, order) => sum + calculatePointsFromTotal(Number(order.total) || 0),
+    0,
+  )
+  const orderTrackerSteps = [
+    {
+      key: 'received',
+      label: 'Pedido recibido',
+      icon: '01',
+      isActive: hasActiveOrder,
+    },
+    {
+      key: 'approved',
+      label: 'Confirmado',
+      icon: '02',
+      isActive: ['Aprobado', 'Preparando', 'Despachado'].includes(activeOrderStatus),
+    },
+    {
+      key: 'preparing',
+      label: 'En preparacion',
+      icon: '03',
+      isActive: ['Preparando', 'Despachado'].includes(activeOrderStatus),
+    },
+    {
+      key: 'dispatched',
+      label: latestOrder?.deliveryType === 'Retiro en sucursal' ? 'Listo para retirar' : 'Despachado',
+      icon: '04',
+      isActive: activeOrderStatus === 'Despachado',
+    },
+  ]
 
   return (
     <section className="client-account-layout">
-      <article className="client-panel-card">
+      <article className="client-panel-card account-span-two">
         <div className="client-card-header">
           <div>
-            <span className="client-card-eyebrow">Mi cuenta</span>
-            <h2>Datos del cliente</h2>
+            <span className="client-card-eyebrow">Pedido activo</span>
+            <h2>Seguimiento de tu pedido</h2>
           </div>
         </div>
 
-        <div className="account-stack">
-          <div className="account-row">
-            <span>Nombre</span>
-            <strong>{client.businessName || session.name}</strong>
-          </div>
-          <div className="account-row">
-            <span>Email</span>
-            <strong>{client.email || session.email}</strong>
-          </div>
-          <div className="account-row">
-            <span>Telefono</span>
-            <strong>{client.phone}</strong>
-          </div>
-          <div className="account-row">
-            <span>CUIT / DNI</span>
-            <strong>{client.taxId}</strong>
-          </div>
-          <div className="account-row">
-            <span>Categoria</span>
-            <strong>{client.category}</strong>
-          </div>
-          <div className="account-row">
-            <span>Sucursal habitual</span>
-            <strong>{client.preferredBranch}</strong>
-          </div>
-        </div>
+        {latestOrder ? (
+          <div className="account-order-hero">
+            <div className="account-order-hero-head">
+              <div>
+                <strong>{latestOrder.id}</strong>
+                <span>
+                  {latestOrder.deliveryType} · {latestOrder.branch || client.preferredBranch || 'A confirmar'}
+                </span>
+              </div>
+              <span className={`order-status-pill ${getLatestOrderStatusMeta(latestOrder.status).tone}`}>
+                {latestOrder.status}
+              </span>
+            </div>
 
-        <div className="account-actions">
-          <button type="button" className="account-edit-btn" onClick={onEditAccount}>
-            Actualizar datos
-          </button>
-        </div>
+            <div className="account-order-tracker" aria-label="Estado del pedido">
+              {orderTrackerSteps.map((step, index) => (
+                <div
+                  key={step.key}
+                  className={
+                    step.isActive
+                      ? 'account-order-tracker-step active'
+                      : 'account-order-tracker-step'
+                  }
+                >
+                  <span className="account-order-tracker-dot">{step.icon}</span>
+                  <strong>{step.label}</strong>
+                  {index !== orderTrackerSteps.length - 1 ? (
+                    <span className="account-order-tracker-line" aria-hidden="true" />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            <div className="account-order-summary-strip">
+              <div>
+                <span>Ultima actualizacion</span>
+                <strong>
+                  {latestOrder?.history?.[0]?.createdAt
+                    ? formatDateTime(latestOrder.history[0].createdAt)
+                    : formatDateTime(latestOrder.createdAt)}
+                </strong>
+              </div>
+              <div>
+                <span>Total</span>
+                <strong>{formatCurrency(latestOrder.total)}</strong>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="client-chat-empty">
+            No tenes un pedido activo en este momento.
+          </div>
+        )}
       </article>
 
-      <article className="client-panel-card">
+      <article className="client-panel-card account-side-card">
         <div className="client-card-header">
           <div>
             <span className="client-card-eyebrow">Puntos</span>
@@ -1314,9 +2010,45 @@ function AccountPage({
 
           <p className="points-hero-message">{accountMessage}</p>
 
+          <div className="points-progress-block">
+            <div className="points-progress-copy">
+              <span>Progreso al siguiente nivel</span>
+              <strong>
+                {loyaltyStatus.nextTier
+                  ? `${Math.round(loyaltyStatus.progress)}% hacia ${loyaltyStatus.nextTier.name}`
+                  : 'Nivel maximo alcanzado'}
+              </strong>
+            </div>
+            <div className="client-sidebar-level-progress points-progress-bar">
+              <span style={{ width: `${loyaltyStatus.progress}%` }}></span>
+            </div>
+          </div>
+
+          <div className="points-period-summary">
+            <span>Este mes</span>
+            <strong>
+              {formatCurrency(monthlySpend)} · +{monthlyPoints.toLocaleString('es-AR')} puntos
+            </strong>
+          </div>
+
           <div className="points-expiration-box">
             <span>Proximo vencimiento</span>
             <strong>1.250 puntos el 30 Sep 2026</strong>
+          </div>
+
+          <div className="points-benefits-box">
+            <span className="points-benefits-title">Beneficios activos</span>
+            <div className="points-benefits-list">
+              {activeBenefits.length > 0 ? (
+                activeBenefits.map((benefit) => (
+                  <span key={benefit} className="points-benefit-chip">
+                    {benefit}
+                  </span>
+                ))
+              ) : (
+                <span className="points-benefit-chip muted">Sin beneficios adicionales</span>
+              )}
+            </div>
           </div>
 
           <div className="points-tier-track">
@@ -1344,41 +2076,7 @@ function AccountPage({
         </div>
       </article>
 
-      <article className="client-panel-card">
-        <div className="client-card-header">
-          <div>
-            <span className="client-card-eyebrow">Seguimiento</span>
-            <h2>Estado de tu pedido actual</h2>
-          </div>
-        </div>
-
-        <div className="status-steps">
-          <div className={latestOrder ? 'status-step active' : 'status-step'}>Pedido recibido</div>
-          <div
-            className={
-              ['Pendiente', 'Aprobado', 'Preparando', 'Despachado', 'Cancelado'].includes(currentStatus)
-                ? 'status-step active'
-                : 'status-step'
-            }
-          >
-            {currentStatus}
-          </div>
-          <div
-            className={
-              ['Aprobado', 'Preparando', 'Despachado'].includes(currentStatus)
-                ? 'status-step active'
-                : 'status-step'
-            }
-          >
-            {latestOrder?.deliveryType === 'Retiro en sucursal' ? 'Listo para retiro' : 'En camino'}
-          </div>
-          <div className={currentStatus === 'Despachado' ? 'status-step active' : 'status-step'}>
-            Despachado
-          </div>
-        </div>
-      </article>
-
-      <article className="client-panel-card account-span-two">
+      <article className="client-panel-card account-side-card account-history-card">
         <div className="client-card-header">
           <div>
             <span className="client-card-eyebrow">Historial</span>
@@ -1387,30 +2085,22 @@ function AccountPage({
         </div>
 
         <div className="history-table">
+          <div className="history-row history-row-head">
+            <span>Pedido</span>
+            <span>Fecha</span>
+            <span>Estado</span>
+            <span>Puntos</span>
+            <span>Total</span>
+          </div>
           {previousOrders.map((order) => (
             <div key={order.code} className="history-row">
               <strong>{order.code}</strong>
               <span>{order.date}</span>
               <span>{order.status}</span>
+              <span>{order.points}</span>
               <strong>{order.total}</strong>
             </div>
           ))}
-        </div>
-      </article>
-
-      <article className="client-panel-card account-span-two account-logout-card">
-        <div className="account-logout-wrap">
-          <div>
-            <span className="client-card-eyebrow">Sesion</span>
-            <h2>Cerrar sesion</h2>
-            <p className="checkout-subtitle">
-              Sal de tu cuenta de cliente de forma segura cuando termines de operar.
-            </p>
-          </div>
-
-          <button type="button" className="account-logout-btn" onClick={onLogout}>
-            Cerrar sesion
-          </button>
         </div>
       </article>
     </section>
@@ -1426,9 +2116,11 @@ export function ClientDashboard() {
   const [productPage, setProductPage] = useState(1)
   const [orderItems, setOrderItems] = useState([])
   const [productQuantities, setProductQuantities] = useState({})
+  const [isQuickOrderOpen, setIsQuickOrderOpen] = useState(false)
+  const [quickOrderDraft, setQuickOrderDraft] = useState('')
   const [isAccountEditOpen, setIsAccountEditOpen] = useState(false)
-  const [clientChatDraft, setClientChatDraft] = useState('')
-  const clientTypingTimeoutRef = useRef(null)
+  const [clientChatOrderReferenceId, setClientChatOrderReferenceId] = useState('')
+  const [selectedChatOrderId, setSelectedChatOrderId] = useState(null)
   const { logout, session } = useAuth()
   const {
     clients,
@@ -1468,6 +2160,8 @@ export function ClientDashboard() {
   )
 
   const latestOrder = clientOrders[0] ?? null
+  const selectedChatOrder =
+    clientOrders.find((order) => order.id === selectedChatOrderId) ?? null
   const clientChat = useMemo(
     () =>
       chats.find((entry) => entry.clientId === client.id) ?? {
@@ -1533,6 +2227,7 @@ export function ClientDashboard() {
         code: order.id,
         date: formatDate(order.createdAt),
         status: order.status,
+        points: `+${calculatePointsFromTotal(order.total).toLocaleString('es-AR')} pts`,
         total: formatCurrency(order.total),
       })),
     [clientOrders],
@@ -1541,6 +2236,41 @@ export function ClientDashboard() {
     () => orderItems.reduce((sum, item) => sum + item.qty, 0),
     [orderItems],
   )
+  const quickOrderSummary = useMemo(() => {
+    const lines = quickOrderDraft
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+    const productsBySku = new Map(
+      products.map((product) => [String(product.sku ?? '').trim().toUpperCase(), product]),
+    )
+    const errors = []
+    let validCount = 0
+
+    lines.forEach((line, index) => {
+      const parts = line.split(/[\t,; ]+/).filter(Boolean)
+      const sku = String(parts[0] ?? '').trim().toUpperCase()
+      const qty = Number(parts[1] ?? 0)
+
+      if (!sku || !productsBySku.has(sku)) {
+        errors.push(`Linea ${index + 1}: SKU no encontrado`)
+        return
+      }
+
+      if (!Number.isFinite(qty) || qty <= 0) {
+        errors.push(`Linea ${index + 1}: cantidad invalida`)
+        return
+      }
+
+      validCount += 1
+    })
+
+    return {
+      validCount,
+      invalidCount: errors.length,
+      errors,
+    }
+  }, [products, quickOrderDraft])
 
   const handleLogout = () => {
     logout()
@@ -1638,28 +2368,59 @@ export function ClientDashboard() {
     setProductQuantities(buildQuantityMap(presetItems))
   }
 
-  const handleBatchAddToOrder = () => {
-    const selectedItems = Object.entries(productQuantities)
-      .map(([productId, qty]) => ({ productId: Number(productId), qty }))
-      .filter((item) => item.qty > 0)
+  const handleApplyQuickOrder = () => {
+    const lines = quickOrderDraft
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
 
-    if (selectedItems.length === 0) return
+    if (lines.length === 0) {
+      setIsQuickOrderOpen(false)
+      return
+    }
 
-    setOrderItems((current) => {
-      const next = [...current]
-      selectedItems.forEach((selected) => {
-        const existing = next.find((item) => item.productId === selected.productId)
-        if (existing) {
-          existing.qty += selected.qty
-        } else {
-          next.push(selected)
-        }
+    const productsBySku = new Map(
+      products.map((product) => [String(product.sku ?? '').trim().toUpperCase(), product]),
+    )
+    const nextItems = []
+
+    lines.forEach((line) => {
+      const parts = line.split(/[\t,; ]+/).filter(Boolean)
+      const sku = String(parts[0] ?? '').trim().toUpperCase()
+      const qty = Number(parts[1] ?? 0)
+      const product = productsBySku.get(sku)
+
+      if (!product || !Number.isFinite(qty) || qty <= 0) {
+        return
+      }
+
+      nextItems.push({
+        productId: product.id,
+        qty: Math.max(0, Math.min(qty, Number(product.currentStock) || 0)),
       })
-      return next
     })
 
-    setProductQuantities({})
-    handleTabChange('checkout')
+    if (nextItems.length === 0) {
+      return
+    }
+
+    setOrderItems((current) => {
+      const merged = [...current]
+
+      nextItems.forEach((nextItem) => {
+        const existing = merged.find((item) => item.productId === nextItem.productId)
+        if (existing) {
+          existing.qty += nextItem.qty
+        } else {
+          merged.push(nextItem)
+        }
+      })
+
+      return merged
+    })
+
+    setQuickOrderDraft('')
+    setIsQuickOrderOpen(false)
   }
 
   const handleConfirmOrder = (checkoutData) => {
@@ -1717,38 +2478,32 @@ export function ClientDashboard() {
     setIsAccountEditOpen(false)
   }
 
-  const handleSendClientChatMessage = () => {
-    if (!clientChatDraft.trim()) {
+  const handleSendClientChatMessage = (messageText = '') => {
+    const selectedOrderReference = clientOrders.find(
+      (order) => order.id === clientChatOrderReferenceId,
+    )
+
+    if (!messageText.trim() && !selectedOrderReference) {
       return
     }
 
     setChatTyping(client.id, 'client', false)
-    sendChatMessage(client.id, 'client', client.businessName || session.name, clientChatDraft)
-    setClientChatDraft('')
+    sendChatMessage(client.id, 'client', client.businessName || session.name, messageText, {
+      orderReference: selectedOrderReference
+        ? {
+            orderId: selectedOrderReference.id,
+            orderCode: selectedOrderReference.id,
+            status: selectedOrderReference.status,
+            total: selectedOrderReference.total,
+            createdAt: selectedOrderReference.createdAt,
+          }
+        : null,
+    })
+    setClientChatOrderReferenceId('')
   }
 
-  useEffect(() => {
-    const isTyping = clientChatDraft.trim().length > 0
-    setChatTyping(client.id, 'client', isTyping)
-
-    if (clientTypingTimeoutRef.current) {
-      window.clearTimeout(clientTypingTimeoutRef.current)
-    }
-
-    if (isTyping) {
-      clientTypingTimeoutRef.current = window.setTimeout(() => {
-        setChatTyping(client.id, 'client', false)
-      }, 2200)
-    }
-
-    return () => {
-      if (clientTypingTimeoutRef.current) {
-        window.clearTimeout(clientTypingTimeoutRef.current)
-      }
-    }
-  }, [client.id, clientChatDraft])
-
   const catalogProps = {
+    products,
     categories,
     brands,
     activeCategory,
@@ -1766,14 +2521,38 @@ export function ClientDashboard() {
     onPrevPage: () => setProductPage((current) => Math.max(current - 1, 1)),
     onNextPage: () => setProductPage((current) => Math.min(current + 1, productTotalPages)),
     productQuantities,
+    orderItems,
     tierName: loyaltyStatus.currentTier.name,
     settings,
     onQuantityChange: handleQuantityChange,
     onAddToOrder: handleAddToOrder,
-    onBatchAddToOrder: handleBatchAddToOrder,
     onRepeatLastOrder: handleRepeatLastOrder,
+    onOpenQuickOrder: () => setIsQuickOrderOpen(true),
     onCheckout: () => handleTabChange('checkout'),
     canCheckout: canProceedToCheckout,
+  }
+
+  if (activeTab === 'checkout') {
+    return (
+      <main className="client-checkout-shell">
+        <CheckoutPage
+          client={client}
+          products={products}
+          settings={settings}
+          orderItems={orderItems}
+          onBackToOrder={() => handleTabChange('pedido')}
+          onConfirmOrder={handleConfirmOrder}
+        />
+        {isAccountEditOpen ? (
+          <AccountEditModal
+            formValues={accountForm}
+            onChange={handleAccountFieldChange}
+            onClose={() => setIsAccountEditOpen(false)}
+            onSave={handleSaveAccount}
+          />
+        ) : null}
+      </main>
+    )
   }
 
   return (
@@ -1792,15 +2571,19 @@ export function ClientDashboard() {
       <section className="client-main-shell">
         <ClientPageHeader
           activeTab={activeTab}
+          client={client}
           cartCount={cartCount}
           onRepeatLastOrder={handleRepeatLastOrder}
           onCartClick={handleGoToCart}
           settings={settings}
+          onEditAccount={handleOpenAccountEdit}
         />
 
         <section className="client-dashboard-shell client-shell-card">
           {activeTab === 'inicio' ? (
             <HomeSection
+              client={client}
+              clientOrders={clientOrders}
               products={products}
               loyaltyStatus={loyaltyStatus}
               tierBenefitSummary={tierBenefitSummary}
@@ -1815,27 +2598,16 @@ export function ClientDashboard() {
 
           {activeTab === 'pedido' ? <OrderPage {...catalogProps} /> : null}
 
-          {activeTab === 'checkout' ? (
-            <CheckoutPage
-              client={client}
-              products={products}
-              settings={settings}
-              orderItems={orderItems}
-              onBackToOrder={() => handleTabChange('pedido')}
-              onConfirmOrder={handleConfirmOrder}
-            />
-          ) : null}
-
           {activeTab === 'cuenta' ? (
             <AccountPage
               session={session}
               client={client}
               loyaltyStatus={loyaltyStatus}
+              tierBenefitSummary={tierBenefitSummary}
               latestOrder={latestOrder}
+              clientOrders={clientOrders}
               previousOrders={previousOrders}
               orderItems={orderItems}
-              onLogout={handleLogout}
-              onEditAccount={handleOpenAccountEdit}
             />
           ) : null}
 
@@ -1844,11 +2616,14 @@ export function ClientDashboard() {
           {activeTab === 'chat' ? (
             <ClientChatPage
               chat={clientChat}
-              draft={clientChatDraft}
-              onDraftChange={setClientChatDraft}
               onSend={handleSendClientChatMessage}
+              onTypingChange={(isTyping) => setChatTyping(client.id, 'client', isTyping)}
               unreadCount={unreadForClient}
               typingLabel={adminIsTyping ? 'Administracion esta escribiendo...' : ''}
+              orderOptions={clientOrders}
+              selectedOrderId={clientChatOrderReferenceId}
+              onSelectedOrderChange={setClientChatOrderReferenceId}
+              onOpenOrderReference={setSelectedChatOrderId}
             />
           ) : null}
         </section>
@@ -1860,6 +2635,25 @@ export function ClientDashboard() {
           onChange={handleAccountFieldChange}
           onClose={() => setIsAccountEditOpen(false)}
           onSave={handleSaveAccount}
+        />
+      ) : null}
+
+      {selectedChatOrder ? (
+        <ClientChatOrderModal
+          order={selectedChatOrder}
+          client={client}
+          products={products}
+          onClose={() => setSelectedChatOrderId(null)}
+        />
+      ) : null}
+
+      {isQuickOrderOpen ? (
+        <QuickOrderModal
+          draft={quickOrderDraft}
+          summary={quickOrderSummary}
+          onDraftChange={setQuickOrderDraft}
+          onClose={() => setIsQuickOrderOpen(false)}
+          onApply={handleApplyQuickOrder}
         />
       ) : null}
     </main>

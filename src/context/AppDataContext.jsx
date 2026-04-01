@@ -109,6 +109,10 @@ function normalizeStoredState(rawState) {
       history: buildOrderHistoryFallback(order),
       ...order,
     })),
+    products: nextState.products.map((product) => ({
+      ...product,
+      currentStock: 1000,
+    })),
   }
 }
 
@@ -1072,10 +1076,21 @@ export function AppDataProvider({ children }) {
     })
   }
 
-  const sendChatMessage = (clientId, senderRole, senderName, text) => {
+  const sendChatMessage = (clientId, senderRole, senderName, text, options = {}) => {
     const normalizedText = text.trim()
+    const rawReference = options?.orderReference
+    const normalizedOrderReference =
+      rawReference && rawReference.orderId
+        ? {
+            orderId: rawReference.orderId,
+            orderCode: rawReference.orderCode ?? rawReference.orderId,
+            status: rawReference.status ?? 'Pendiente',
+            total: Number(rawReference.total) || 0,
+            createdAt: rawReference.createdAt ?? new Date().toISOString(),
+          }
+        : null
 
-    if (!normalizedText) {
+    if (!normalizedText && !normalizedOrderReference) {
       return
     }
 
@@ -1103,7 +1118,12 @@ export function AppDataProvider({ children }) {
               id: `CHAT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
               senderRole,
               senderName,
-              text: normalizedText,
+              text:
+                normalizedText ||
+                (senderRole === 'admin'
+                  ? 'Te comparto este pedido para revisarlo.'
+                  : 'Te comparto este pedido para que lo revises.'),
+              orderReference: normalizedOrderReference,
               createdAt: timestamp,
             },
           ],

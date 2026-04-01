@@ -380,13 +380,6 @@ function MetricCard({ title, value, detail, tone }) {
 function AdminAiSection() {
   return (
     <section className="admin-section">
-      <div className="admin-section-header">
-        <div>
-          <span className="admin-card-eyebrow">Inteligencia artificial</span>
-          <h2>Asistente IA para administracion</h2>
-        </div>
-      </div>
-
       <div className="admin-ai-grid">
         <article className="admin-card admin-ai-hero">
           <h3>Modulo preparado para operaciones y CRM</h3>
@@ -2214,6 +2207,7 @@ export function AdminDashboard() {
   const [isProductImportOpen, setIsProductImportOpen] = useState(false)
   const [selectedChatClientId, setSelectedChatClientId] = useState(null)
   const [adminChatDraft, setAdminChatDraft] = useState('')
+  const [adminChatOrderReferenceId, setAdminChatOrderReferenceId] = useState('')
   const [tierBenefitConfigDrafts, setTierBenefitConfigDrafts] = useState({})
   const adminTypingTimeoutRef = useRef(null)
   const adminChatThreadRef = useRef(null)
@@ -2693,6 +2687,9 @@ export function AdminDashboard() {
       : null
   const selectedChatConversation =
     chatConversations.find((chat) => chat.clientId === selectedChatClientId) ?? null
+  const selectedChatOrders = ordersWithClient.filter(
+    (order) => order.clientId === selectedChatClientId,
+  )
   const clientIsTyping =
     Boolean(selectedChatConversation?.clientTypingAt) &&
     Date.now() - new Date(selectedChatConversation.clientTypingAt).getTime() < 3000
@@ -2730,6 +2727,10 @@ export function AdminDashboard() {
 
     openChat(selectedChatClientId, 'admin')
   }, [activeSection, selectedChatClientId])
+
+  useEffect(() => {
+    setAdminChatOrderReferenceId('')
+  }, [selectedChatClientId])
 
   useEffect(() => {
     setStockPage(1)
@@ -3174,13 +3175,34 @@ export function AdminDashboard() {
   }
 
   const handleSendAdminChatMessage = () => {
-    if (!selectedChatConversation || !adminChatDraft.trim()) {
+    const selectedOrderReference = selectedChatOrders.find(
+      (order) => order.id === adminChatOrderReferenceId,
+    )
+
+    if (!selectedChatConversation || (!adminChatDraft.trim() && !selectedOrderReference)) {
       return
     }
 
     setChatTyping(selectedChatConversation.clientId, 'admin', false)
-    sendChatMessage(selectedChatConversation.clientId, 'admin', session.name, adminChatDraft)
+    sendChatMessage(
+      selectedChatConversation.clientId,
+      'admin',
+      session.name,
+      adminChatDraft,
+      {
+        orderReference: selectedOrderReference
+          ? {
+              orderId: selectedOrderReference.id,
+              orderCode: selectedOrderReference.id,
+              status: selectedOrderReference.status,
+              total: selectedOrderReference.total,
+              createdAt: selectedOrderReference.createdAt,
+            }
+          : null,
+      },
+    )
     setAdminChatDraft('')
+    setAdminChatOrderReferenceId('')
   }
 
   const clientFormInitialValues = useMemo(() => {
@@ -3752,13 +3774,6 @@ export function AdminDashboard() {
 
           {activeSection === 'chats' ? (
             <section className="admin-section admin-chat-section">
-              <div className="admin-section-header">
-                <div>
-                  <span className="admin-card-eyebrow">Mensajeria</span>
-                  <h2>Chat cliente-admin</h2>
-                </div>
-              </div>
-
               <div className="admin-chat-layout">
                 <article className="admin-card admin-chat-list-card">
                   <div className="admin-chat-list">
@@ -3797,6 +3812,10 @@ export function AdminDashboard() {
                         <div>
                           <span className="admin-card-eyebrow">Conversacion activa</span>
                           <h3>{selectedChatConversation.clientName}</h3>
+                          <div className="admin-chat-meta">
+                            <span className="admin-chat-status-dot" aria-hidden="true" />
+                            <span>Cliente conectado</span>
+                          </div>
                         </div>
                         {selectedChatConversation.client ? (
                           <TierBadge tier={selectedChatConversation.client.tier} />
@@ -3804,6 +3823,7 @@ export function AdminDashboard() {
                       </div>
 
                       <div ref={adminChatThreadRef} className="admin-chat-thread">
+                        <div className="admin-chat-thread-inner">
                         {selectedChatConversation.messages.length > 0 ? (
                           selectedChatConversation.messages.map((message) => (
                             <div
@@ -3816,6 +3836,23 @@ export function AdminDashboard() {
                             >
                               <strong>{message.senderName}</strong>
                               <p>{message.text}</p>
+                              {message.orderReference ? (
+                                <button
+                                  type="button"
+                                  className="chat-order-reference admin-chat-order-reference"
+                                  onClick={() => setSelectedOrderId(message.orderReference.orderId)}
+                                >
+                                  <span className="chat-order-reference-label">Pedido vinculado</span>
+                                  <strong>
+                                    {message.orderReference.orderCode ??
+                                      message.orderReference.orderId}
+                                  </strong>
+                                  <small>
+                                    {message.orderReference.status} ·{' '}
+                                    {formatCurrency(message.orderReference.total ?? 0)}
+                                  </small>
+                                </button>
+                              ) : null}
                               <small>{formatDateTime(message.createdAt)}</small>
                             </div>
                           ))
@@ -3830,27 +3867,45 @@ export function AdminDashboard() {
                             {selectedChatConversation.clientName} esta escribiendo...
                           </div>
                         ) : null}
+                        </div>
                       </div>
 
                       <div className="admin-chat-composer">
-                        <textarea
-                          value={adminChatDraft}
-                          onChange={(event) => setAdminChatDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' && !event.shiftKey) {
-                              event.preventDefault()
-                              handleSendAdminChatMessage()
-                            }
-                          }}
-                          placeholder="Escribir respuesta para el cliente..."
-                        />
-                        <button
-                          type="button"
-                          className="admin-primary-btn"
-                          onClick={handleSendAdminChatMessage}
-                        >
-                          Enviar mensaje
-                        </button>
+                        {selectedChatOrders.length > 0 ? (
+                          <div className="client-chat-tools admin-chat-tools">
+                            <select
+                              value={adminChatOrderReferenceId}
+                              onChange={(event) => setAdminChatOrderReferenceId(event.target.value)}
+                            >
+                              <option value="">Adjuntar un pedido...</option>
+                              {selectedChatOrders.map((order) => (
+                                <option key={order.id} value={order.id}>
+                                  {order.id} · {formatCurrency(order.total)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : null}
+                        <div className="admin-chat-composer-row">
+                          <textarea
+                            value={adminChatDraft}
+                            onChange={(event) => setAdminChatDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault()
+                                handleSendAdminChatMessage()
+                              }
+                            }}
+                            placeholder="Escribir respuesta para el cliente..."
+                          />
+                          <button
+                            type="button"
+                            className="admin-primary-btn admin-chat-send-btn"
+                            onClick={handleSendAdminChatMessage}
+                          >
+                            Enviar
+                          </button>
+                        </div>
                       </div>
                     </>
                   ) : (
@@ -4077,13 +4132,6 @@ export function AdminDashboard() {
 
           {activeSection === 'fidelizacion' ? (
             <section className="admin-section">
-            <div className="admin-section-header">
-              <div>
-                <span className="admin-card-eyebrow">Fidelizacion</span>
-                <h2>Sistema de Puntos y Niveles</h2>
-              </div>
-            </div>
-
             <div className="admin-fidelity-summary-grid">
               <article className="admin-card admin-fidelity-summary-card">
                 <span className="admin-card-eyebrow">Regla de acumulacion</span>
@@ -4263,13 +4311,6 @@ export function AdminDashboard() {
 
           {activeSection === 'configuracion' ? (
             <section className="admin-section">
-            <div className="admin-section-header">
-              <div>
-                <span className="admin-card-eyebrow">Sistema</span>
-                <h2>Configuracion</h2>
-              </div>
-            </div>
-
             <div className="admin-config-grid">
               <article className="admin-card">
                 <h3>Preferencias operativas</h3>
