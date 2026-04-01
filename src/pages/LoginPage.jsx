@@ -4,9 +4,9 @@ import { useAuth } from '../context/AuthContext'
 
 const quickAccessUsers = import.meta.env.DEV
   ? {
-      client: { email: 'cliente@amprev.com', password: 'cliente123' },
-      admin: { email: 'admin@amprev.com', password: 'admin123' },
-    }
+    client: { email: 'cliente@amprev.com', password: 'cliente123' },
+    admin: { email: 'admin@amprev.com', password: 'admin123' },
+  }
   : null
 
 export function LoginPage() {
@@ -19,7 +19,7 @@ export function LoginPage() {
   })
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+
   const [showRequestForm, setShowRequestForm] = useState(false)
   const [isRequestSubmitting, setIsRequestSubmitting] = useState(false)
   const [requestSent, setRequestSent] = useState(false)
@@ -107,18 +107,11 @@ export function LoginPage() {
             />
           </div>
           <h1>Ingresá a tu espacio de trabajo</h1>
-          <p className="brand-copy">
-            Una entrada clara para clientes y administradores, lista para seguir
-            construyendo los paneles que vienen después.
-          </p>
         </div>
 
         <div className="login-card">
           <div className="card-glow" aria-hidden="true"></div>
           <h2>Iniciá sesión</h2>
-          <p className="card-copy">
-            Usá una cuenta de prueba para entrar al panel correspondiente.
-          </p>
 
           <form className="login-form" onSubmit={handleSubmit}>
             <label className="field">
@@ -179,7 +172,7 @@ export function LoginPage() {
           <div className="login-request-card">
             <p className="login-request-eyebrow">Acceso mayorista</p>
             <h3>Solicitá tu cuenta profesional</h3>
-            
+
             {!showRequestForm ? (
               <>
                 <p>
