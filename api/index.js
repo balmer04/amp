@@ -335,6 +335,38 @@ function formatMonthLabel(date) {
   return new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(date);
 }
 
+function normalizeToolArguments(rawArguments) {
+  if (!rawArguments) {
+    return {};
+  }
+
+  if (typeof rawArguments === 'object') {
+    return rawArguments;
+  }
+
+  try {
+    return JSON.parse(rawArguments);
+  } catch {
+    return {};
+  }
+}
+
+function extractToolCallsFromText(responseText, availableTools = []) {
+  if (typeof responseText !== 'string' || !responseText.includes('"name"')) {
+    return [];
+  }
+
+  const validToolNames = new Set(availableTools.map((tool) => tool.name));
+  const matches = [...responseText.matchAll(/\{"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*\}/g)];
+
+  return matches
+    .map((match) => ({
+      name: match[1],
+      arguments: normalizeToolArguments(match[2]),
+    }))
+    .filter((toolCall) => validToolNames.has(toolCall.name));
+}
+
 const executeTool = async (functionName, args, pool) => {
   const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
   const state = rows.length > 0 ? JSON.parse(rows[0].state_json) : { products: [], clients: [], orders: [] };
@@ -801,10 +833,22 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
     }
 
     let data = await response.json();
+    const structuredToolCalls = Array.isArray(data?.result?.tool_calls) ? data.result.tool_calls : [];
+    const fallbackToolCalls = extractToolCallsFromText(data?.result?.response, tools);
+    const toolCalls = (structuredToolCalls.length > 0 ? structuredToolCalls : fallbackToolCalls)
+      .map((toolCall) => ({
+        name: toolCall.name,
+        arguments: normalizeToolArguments(toolCall.arguments),
+      }))
+      .filter((toolCall) => tools.some((tool) => tool.name === toolCall.name));
 
-    if (data.result.tool_calls && data.result.tool_calls.length > 0) {
-      const toolCall = data.result.tool_calls[0];
-      const toolResult = await executeTool(toolCall.name, toolCall.arguments, pool);
+    if (toolCalls.length > 0) {
+      const toolResults = [];
+
+      for (const toolCall of toolCalls) {
+        const toolResult = await executeTool(toolCall.name, toolCall.arguments, pool);
+        toolResults.push(`Herramienta: ${toolCall.name}\nArgumentos: ${JSON.stringify(toolCall.arguments)}\nResultado:\n${toolResult}`);
+      }
 
       const secondResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
         method: 'POST',
@@ -815,7 +859,7 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
             ...cleanMessages,
             {
               role: 'user',
-              content: `[Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolvio:\n${toolResult}\nResponde a mi pedido usando esto.]`,
+              content: `[Tool Results]\n${toolResults.join('\n\n')}\n\nUsa estos resultados para responder al usuario en lenguaje natural. No muestres nombres de herramientas, JSON ni payloads internos. Si falta informacion, decilo claramente.`,
             },
           ],
         }),
@@ -824,7 +868,20 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
       data = await secondResponse.json();
     }
 
-    return res.json({ ok: true, result: { ...data.result, response: data.result.response || "" } });
+    const finalResponse = data?.result?.response || '';
+    const leakedToolCalls = extractToolCallsFromText(finalResponse, tools);
+
+    if (leakedToolCalls.length > 0) {
+      return res.json({
+        ok: true,
+        result: {
+          ...data.result,
+          response: 'Pude interpretar la consulta, pero la respuesta del modelo vino en un formato interno de herramientas. Reintentá la consulta o actualizá el despliegue si esto sigue pasando.',
+        },
+      });
+    }
+
+    return res.json({ ok: true, result: { ...data.result, response: finalResponse } });
   } catch (err) {
     console.error("AI Catch:", err);
     return res.status(500).json({ ok: false, error: 'Error general IA: ' + err.message });
