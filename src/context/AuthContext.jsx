@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
 const STORAGE_KEY = 'amp-reventa-session'
 
@@ -19,8 +19,32 @@ function getStoredSession() {
   }
 }
 
+function buildSessionFromResult(result) {
+  return {
+    id: result.user.id,
+    email: result.user.email,
+    role: result.user.role,
+    name: result.user.name,
+    token: result.token,
+    profile: result.profile ?? null,
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(getStoredSession)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const persistSession = (result) => {
+    const nextSession = buildSessionFromResult(result)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession))
+    setSession(nextSession)
+    return nextSession
+  }
+
+  const clearSession = () => {
+    localStorage.removeItem(STORAGE_KEY)
+    setSession(null)
+  }
 
   const login = async ({ email, password }) => {
     try {
@@ -35,40 +59,150 @@ export function AuthProvider({ children }) {
       if (!result.ok) {
         return {
           ok: false,
-          message: result.message || 'No encontramos esa combinación. Probá con cliente@amprev.com o admin@amprev.com.',
+          message:
+            result.message ||
+            'No encontramos esa combinacion. Proba con cliente@amprev.com o admin@amprev.com.',
+        }
+      }
+
+      persistSession(result)
+
+      return { ok: true, role: result.user.role }
+    } catch {
+      return { ok: false, message: 'Error de conexion con el servidor.' }
+    }
+  }
+
+  const register = async (payload) => {
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const result = await response.json()
+
+      if (!result.ok) {
+        return {
+          ok: false,
+          message: result.message || 'No se pudo crear la cuenta en este momento.',
+        }
+      }
+
+      persistSession(result)
+
+      return { ok: true, role: result.user.role }
+    } catch {
+      return { ok: false, message: 'Error de conexion con el servidor.' }
+    }
+  }
+
+  const updateProfile = async (payload) => {
+    if (!session?.token) {
+      return { ok: false, message: 'No hay una sesion activa.' }
+    }
+
+    try {
+      const response = await fetch('/api/profile', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.ok) {
+        return {
+          ok: false,
+          message: result.message || 'No se pudo actualizar el perfil.',
         }
       }
 
       const nextSession = {
-        id: result.user.id,
-        email: result.user.email,
-        role: result.user.role,
-        name: result.user.name,
-        token: result.token,
+        ...session,
+        name: result.user?.name ?? session.name,
+        profile: result.profile ?? session.profile ?? null,
       }
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession))
       setSession(nextSession)
 
-      return { ok: true, role: result.user.role }
-    } catch (err) {
-      return { ok: false, message: 'Error de conexión con el servidor.' }
+      return { ok: true, session: nextSession }
+    } catch {
+      return { ok: false, message: 'Error de conexion con el servidor.' }
     }
   }
 
+  const refreshSession = async () => {
+    if (!session?.token) {
+      return { ok: false }
+    }
+
+    setIsRefreshing(true)
+
+    try {
+      const response = await fetch('/api/auth/me', {
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+        },
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.ok) {
+        clearSession()
+        return { ok: false, message: result.message || 'La sesion ya no es valida.' }
+      }
+
+      const nextSession = {
+        ...session,
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+        name: result.user.name,
+        profile: result.profile ?? session.profile ?? null,
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession))
+      setSession(nextSession)
+
+      return { ok: true, session: nextSession }
+    } catch {
+      clearSession()
+      return { ok: false, message: 'No se pudo validar la sesion actual.' }
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!session?.token) {
+      return
+    }
+
+    refreshSession()
+  }, [])
+
   const logout = () => {
-    localStorage.removeItem(STORAGE_KEY)
-    setSession(null)
+    clearSession()
   }
 
   const value = useMemo(
     () => ({
       session,
       login,
+      register,
+      updateProfile,
+      refreshSession,
       logout,
+      isRefreshing,
       isAuthenticated: Boolean(session),
     }),
-    [session],
+    [session, isRefreshing],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

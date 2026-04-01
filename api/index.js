@@ -28,6 +28,31 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret_de_rescate_temporal';
 
 let dbInitialized = false;
 
+function getUserResponse(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    name: user.name,
+    is_active: user.is_active,
+  };
+}
+
+function getDefaultProfilePayload(user, profile = {}) {
+  return {
+    user_id: user.id,
+    business_name: profile.business_name ?? user.name ?? '',
+    phone: profile.phone ?? '',
+    alt_phone: profile.alt_phone ?? '',
+    tax_id: profile.tax_id ?? '',
+    address: profile.address ?? '',
+    city: profile.city ?? '',
+    province: profile.province ?? '',
+    preferred_branch: profile.preferred_branch ?? '',
+    metadata_json: profile.metadata_json ?? {},
+  };
+}
+
 // Inicializa las tablas de Postgres la primera vez que se despierte el serverless function
 async function initDB() {
   if (dbInitialized) return;
@@ -43,6 +68,43 @@ async function initDB() {
       id INTEGER PRIMARY KEY,
       state_json TEXT
     );
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      business_name TEXT,
+      phone TEXT,
+      alt_phone TEXT,
+      tax_id TEXT,
+      address TEXT,
+      city TEXT,
+      province TEXT,
+      preferred_branch TEXT,
+      metadata_json JSONB DEFAULT '{}'::jsonb
+    );
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL,
+      title TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      archived_at TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS ai_messages (
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      tool_calls_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
   `);
 
   const { rows } = await pool.query('SELECT COUNT(*) as count FROM users');
@@ -74,6 +136,160 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+async function ensureUserProfile(userId, profile = {}) {
+  const payload = getDefaultProfilePayload({ id: userId, name: profile.business_name ?? profile.name ?? '' }, profile);
+
+  await pool.query(
+    `INSERT INTO user_profiles (
+      user_id, business_name, phone, alt_phone, tax_id, address, city, province, preferred_branch, metadata_json
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (user_id) DO NOTHING`,
+    [
+      payload.user_id,
+      payload.business_name,
+      payload.phone,
+      payload.alt_phone,
+      payload.tax_id,
+      payload.address,
+      payload.city,
+      payload.province,
+      payload.preferred_branch,
+      JSON.stringify(payload.metadata_json),
+    ],
+  );
+}
+
+async function getUserProfile(userId) {
+  const { rows } = await pool.query('SELECT * FROM user_profiles WHERE user_id = $1', [userId]);
+  return rows[0] ?? null;
+}
+
+async function getUserWithProfile(userId) {
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+  const user = rows[0];
+
+  if (!user) {
+    return null;
+  }
+
+  await ensureUserProfile(user.id, { business_name: user.name });
+  const profile = await getUserProfile(user.id);
+
+  return {
+    user: getUserResponse(user),
+    profile: profile ?? getDefaultProfilePayload(user),
+  };
+}
+
+async function getAppStateRecord() {
+  const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
+
+  if (rows.length === 0 || !rows[0].state_json) {
+    return null;
+  }
+
+  return JSON.parse(rows[0].state_json);
+}
+
+async function saveAppStateRecord(state) {
+  const stateJson = JSON.stringify(state);
+  const { rows } = await pool.query('SELECT id FROM app_state WHERE id = 1');
+
+  if (rows.length > 0) {
+    await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [stateJson]);
+  } else {
+    await pool.query('INSERT INTO app_state (id, state_json) VALUES (1, $1)', [stateJson]);
+  }
+}
+
+async function syncRegisteredClientIntoAppState(user, profile) {
+  const currentState = await getAppStateRecord();
+
+  if (!currentState || !Array.isArray(currentState.clients)) {
+    return;
+  }
+
+  const exists = currentState.clients.some((client) => client.id === user.id || client.email === user.email);
+
+  if (exists) {
+    return;
+  }
+
+  const nextClient = {
+    id: user.id,
+    name: user.name,
+    businessName: profile?.business_name || user.name,
+    email: user.email,
+    phone: profile?.phone || '',
+    altPhone: profile?.alt_phone || '',
+    taxId: profile?.tax_id || '',
+    address: profile?.address || '',
+    city: profile?.city || '',
+    province: profile?.province || '',
+    preferredBranch: profile?.preferred_branch || '',
+    category: 'Ferreteria',
+    status: 'Activo',
+    note: '',
+    pendingBalance: 0,
+    paymentHistory: [],
+    activityLog: [],
+    orderHistory: [],
+    specialDiscount: 0,
+    points: 0,
+    lifetime_points: 0,
+    available_points: 0,
+    creditLimit: 0,
+    createdAt: new Date().toISOString(),
+  };
+
+  currentState.clients = [nextClient, ...currentState.clients];
+  await saveAppStateRecord(currentState);
+}
+
+async function findOrCreateConversation(userId, channel, conversationId = null) {
+  if (conversationId) {
+    const { rows } = await pool.query(
+      'SELECT * FROM ai_conversations WHERE id = $1 AND user_id = $2 AND channel = $3 AND archived_at IS NULL',
+      [conversationId, userId, channel],
+    );
+
+    if (rows[0]) {
+      return rows[0];
+    }
+  }
+
+  const { rows: existingRows } = await pool.query(
+    `SELECT * FROM ai_conversations
+     WHERE user_id = $1 AND channel = $2 AND archived_at IS NULL
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [userId, channel],
+  );
+
+  if (existingRows[0]) {
+    return existingRows[0];
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO ai_conversations (user_id, channel, title)
+     VALUES ($1, $2, $3)
+     RETURNING *`,
+    [userId, channel, channel === 'admin' ? 'Asistente CRM' : 'Asistente Cliente'],
+  );
+
+  return rows[0];
+}
+
+async function appendConversationMessage(conversationId, role, content, toolCalls = null) {
+  await pool.query(
+    `INSERT INTO ai_messages (conversation_id, role, content, tool_calls_json)
+     VALUES ($1, $2, $3, $4)`,
+    [conversationId, role, content, toolCalls ? JSON.stringify(toolCalls) : null],
+  );
+
+  await pool.query('UPDATE ai_conversations SET updated_at = NOW() WHERE id = $1', [conversationId]);
+}
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     await initDB();
@@ -86,11 +302,174 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ ok: false, message: 'Credenciales invÃ¡lidas.' });
     }
 
+    if (user.is_active === false) {
+      return res.status(403).json({ ok: false, message: 'La cuenta estÃ¡ desactivada.' });
+    }
+
+    await ensureUserProfile(user.id, { business_name: user.name });
+    await pool.query('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
+
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '12h' });
-    res.json({ ok: true, token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
+    const profile = await getUserProfile(user.id);
+    res.json({ ok: true, token, user: getUserResponse(user), profile });
   } catch (error) {
     console.error("Login Error:", error);
     res.status(500).json({ ok: false, message: 'Error interno en el login: ' + (error.message || "Unknown error") });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    await initDB();
+    const {
+      email,
+      password,
+      name,
+      businessName,
+      phone,
+      taxId,
+      address,
+      city,
+      province,
+      preferredBranch,
+    } = req.body ?? {};
+
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const safePassword = String(password ?? '');
+    const safeName = String(name ?? businessName ?? '').trim();
+
+    if (!normalizedEmail || !safePassword || !safeName) {
+      return res.status(400).json({ ok: false, message: 'Email, contraseÃ±a y nombre son obligatorios.' });
+    }
+
+    if (safePassword.length < 6) {
+      return res.status(400).json({ ok: false, message: 'La contraseÃ±a debe tener al menos 6 caracteres.' });
+    }
+
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ ok: false, message: 'Ya existe una cuenta con ese email.' });
+    }
+
+    const passwordHash = bcrypt.hashSync(safePassword, 10);
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, password, role, name, is_active, created_at, updated_at)
+       VALUES ($1, $2, 'client', $3, TRUE, NOW(), NOW())
+       RETURNING *`,
+      [normalizedEmail, passwordHash, safeName],
+    );
+
+    const user = rows[0];
+    const profilePayload = {
+      business_name: String(businessName ?? safeName).trim(),
+      phone: String(phone ?? '').trim(),
+      tax_id: String(taxId ?? '').trim(),
+      address: String(address ?? '').trim(),
+      city: String(city ?? '').trim(),
+      province: String(province ?? '').trim(),
+      preferred_branch: String(preferredBranch ?? '').trim(),
+    };
+
+    await ensureUserProfile(user.id, profilePayload);
+    await syncRegisteredClientIntoAppState(user, profilePayload);
+
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '12h' });
+    const profile = await getUserProfile(user.id);
+
+    return res.status(201).json({
+      ok: true,
+      token,
+      user: getUserResponse(user),
+      profile,
+    });
+  } catch (error) {
+    console.error('Register Error:', error);
+    return res.status(500).json({ ok: false, message: 'Error interno en el registro.' });
+  }
+});
+
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const payload = await getUserWithProfile(req.user.id);
+
+    if (!payload) {
+      return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' });
+    }
+
+    return res.json({ ok: true, ...payload });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Error obteniendo la sesiÃ³n.' });
+  }
+});
+
+app.get('/api/profile', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const payload = await getUserWithProfile(req.user.id);
+
+    if (!payload) {
+      return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' });
+    }
+
+    return res.json({ ok: true, profile: payload.profile });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Error obteniendo el perfil.' });
+  }
+});
+
+app.put('/api/profile', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const {
+      name,
+      business_name,
+      phone,
+      alt_phone,
+      tax_id,
+      address,
+      city,
+      province,
+      preferred_branch,
+      metadata_json,
+    } = req.body ?? {};
+
+    if (typeof name === 'string' && name.trim()) {
+      await pool.query('UPDATE users SET name = $1, updated_at = NOW() WHERE id = $2', [name.trim(), req.user.id]);
+    }
+
+    await ensureUserProfile(req.user.id, { business_name: business_name ?? name ?? req.user.name });
+    await pool.query(
+      `UPDATE user_profiles
+       SET business_name = COALESCE($1, business_name),
+           phone = COALESCE($2, phone),
+           alt_phone = COALESCE($3, alt_phone),
+           tax_id = COALESCE($4, tax_id),
+           address = COALESCE($5, address),
+           city = COALESCE($6, city),
+           province = COALESCE($7, province),
+           preferred_branch = COALESCE($8, preferred_branch),
+           metadata_json = COALESCE($9, metadata_json)
+       WHERE user_id = $10`,
+      [
+        business_name ?? null,
+        phone ?? null,
+        alt_phone ?? null,
+        tax_id ?? null,
+        address ?? null,
+        city ?? null,
+        province ?? null,
+        preferred_branch ?? null,
+        metadata_json ? JSON.stringify(metadata_json) : null,
+        req.user.id,
+      ],
+    );
+
+    const payload = await getUserWithProfile(req.user.id);
+    return res.json({ ok: true, ...payload });
+  } catch (error) {
+    console.error('Profile Update Error:', error);
+    return res.status(500).json({ ok: false, message: 'Error actualizando el perfil.' });
   }
 });
 
@@ -184,6 +563,80 @@ app.post('/api/client/chat', authenticateToken, async (req, res) => {
     await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [JSON.stringify(currentState)]);
     res.json({ ok: true, state: currentState });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/ai/conversations', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const channel = req.query.channel ? String(req.query.channel) : null;
+    const values = [req.user.id];
+    let query = `
+      SELECT id, user_id, channel, title, created_at, updated_at, archived_at
+      FROM ai_conversations
+      WHERE user_id = $1 AND archived_at IS NULL
+    `;
+
+    if (channel) {
+      values.push(channel);
+      query += ` AND channel = $2`;
+    }
+
+    query += ' ORDER BY updated_at DESC';
+    const { rows } = await pool.query(query, values);
+    return res.json({ ok: true, conversations: rows });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Error obteniendo conversaciones.' });
+  }
+});
+
+app.post('/api/ai/conversations', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const channel = req.body?.channel === 'admin' ? 'admin' : 'client';
+    const title = String(req.body?.title ?? (channel === 'admin' ? 'Asistente CRM' : 'Asistente Cliente')).trim();
+    const { rows } = await pool.query(
+      `INSERT INTO ai_conversations (user_id, channel, title)
+       VALUES ($1, $2, $3)
+       RETURNING id, user_id, channel, title, created_at, updated_at, archived_at`,
+      [req.user.id, channel, title],
+    );
+
+    return res.status(201).json({ ok: true, conversation: rows[0] });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Error creando conversaciÃ³n.' });
+  }
+});
+
+app.get('/api/ai/conversations/:id/messages', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const conversationId = Number(req.params.id);
+
+    if (!conversationId) {
+      return res.status(400).json({ ok: false, message: 'ID de conversaciÃ³n invÃ¡lido.' });
+    }
+
+    const { rows: conversationRows } = await pool.query(
+      'SELECT id FROM ai_conversations WHERE id = $1 AND user_id = $2',
+      [conversationId, req.user.id],
+    );
+
+    if (conversationRows.length === 0) {
+      return res.status(404).json({ ok: false, message: 'ConversaciÃ³n no encontrada.' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, conversation_id, role, content, tool_calls_json, created_at
+       FROM ai_messages
+       WHERE conversation_id = $1
+       ORDER BY created_at ASC, id ASC`,
+      [conversationId],
+    );
+
+    return res.json({ ok: true, messages: rows });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Error obteniendo mensajes.' });
+  }
 });
 
 app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, res) => {
@@ -817,6 +1270,13 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
     const model = '@cf/meta/llama-3.1-8b-instruct';
     const incomingMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
     const cleanMessages = incomingMessages.filter((message) => message.role !== 'system');
+    const channel = requiredRole === 'admin' ? 'admin' : 'client';
+    const conversation = await findOrCreateConversation(req.user.id, channel, req.body?.conversationId);
+    const lastUserMessage = [...cleanMessages].reverse().find((message) => message.role === 'user');
+
+    if (lastUserMessage?.content) {
+      await appendConversationMessage(conversation.id, 'user', String(lastUserMessage.content), null);
+    }
 
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
       method: 'POST',
@@ -872,6 +1332,13 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
     const leakedToolCalls = extractToolCallsFromText(finalResponse, tools);
 
     if (leakedToolCalls.length > 0) {
+      await appendConversationMessage(
+        conversation.id,
+        'assistant',
+        'Pude interpretar la consulta, pero la respuesta del modelo vino en un formato interno de herramientas. Reintentá la consulta o actualizá el despliegue si esto sigue pasando.',
+        leakedToolCalls,
+      );
+
       return res.json({
         ok: true,
         result: {
@@ -881,7 +1348,18 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
       });
     }
 
-    return res.json({ ok: true, result: { ...data.result, response: finalResponse } });
+    await appendConversationMessage(
+      conversation.id,
+      'assistant',
+      finalResponse || 'No se pudo obtener una respuesta.',
+      toolCalls.length > 0 ? toolCalls : null,
+    );
+
+    return res.json({
+      ok: true,
+      conversationId: conversation.id,
+      result: { ...data.result, response: finalResponse },
+    });
   } catch (err) {
     console.error("AI Catch:", err);
     return res.status(500).json({ ok: false, error: 'Error general IA: ' + err.message });

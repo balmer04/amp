@@ -1460,6 +1460,50 @@
   border-color: #cfe0fb;
 }
 
+.chat-history-strip {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 1rem 0;
+}
+
+.chat-history-chip {
+  border: 1px solid #dbe3ef;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #5c6f86;
+  padding: 0.5rem 0.8rem;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.chat-history-chip:hover {
+  border-color: #9db7ea;
+  color: #123281;
+}
+
+.chat-history-chip.active {
+  border-color: #123281;
+  background: #eef4ff;
+  color: #123281;
+  font-weight: 700;
+}
+
+.chat-history-chip--new {
+  background: #123281;
+  border-color: #123281;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.chat-history-chip--new:hover {
+  background: #0f2868;
+  border-color: #0f2868;
+  color: #ffffff;
+}
+
 .admin-chat-composer textarea,
 .client-chat-composer textarea {
   width: 100%;

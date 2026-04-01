@@ -1487,7 +1487,7 @@ function CheckoutPage({
   )
 }
 
-function AccountEditModal({ formValues, onChange, onClose, onSave }) {
+function AccountEditModal({ formValues, onChange, onClose, onSave, isSaving, saveError }) {
   return (
     <div className="client-modal-backdrop" role="presentation">
       <div className="client-modal-card">
@@ -1512,7 +1512,8 @@ function AccountEditModal({ formValues, onChange, onClose, onSave }) {
             <input
               type="email"
               value={formValues.email}
-              onChange={(event) => onChange('email', event.target.value)}
+              disabled
+              readOnly
             />
           </label>
           <label className="client-form-field">
@@ -1585,12 +1586,14 @@ function AccountEditModal({ formValues, onChange, onClose, onSave }) {
           </label>
         </div>
 
+        {saveError ? <p className="form-error">{saveError}</p> : null}
+
         <div className="client-modal-actions">
-          <button type="button" className="client-modal-btn secondary" onClick={onClose}>
+          <button type="button" className="client-modal-btn secondary" onClick={onClose} disabled={isSaving}>
             Cancelar
           </button>
-          <button type="button" className="client-modal-btn primary" onClick={onSave}>
-            Guardar cambios
+          <button type="button" className="client-modal-btn primary" onClick={onSave} disabled={isSaving}>
+            {isSaving ? 'Guardando...' : 'Guardar cambios'}
           </button>
         </div>
       </div>
@@ -2093,9 +2096,11 @@ export function ClientDashboard() {
   const [isQuickOrderOpen, setIsQuickOrderOpen] = useState(false)
   const [quickOrderDraft, setQuickOrderDraft] = useState('')
   const [isAccountEditOpen, setIsAccountEditOpen] = useState(false)
+  const [isSavingAccount, setIsSavingAccount] = useState(false)
+  const [accountSaveError, setAccountSaveError] = useState('')
   const [clientChatOrderReferenceId, setClientChatOrderReferenceId] = useState('')
   const [selectedChatOrderId, setSelectedChatOrderId] = useState(null)
-  const { logout, session } = useAuth()
+  const { logout, session, updateProfile } = useAuth()
   const {
     clients,
     products,
@@ -2111,7 +2116,33 @@ export function ClientDashboard() {
   const navigate = useNavigate()
   const deferredSearchTerm = useDeferredValue(searchTerm)
 
-  const client = clients.find((entry) => entry.id === session.id) ?? clients[0]
+  const fallbackClient = useMemo(
+    () => ({
+      id: session.id,
+      name: session.name,
+      businessName: session.profile?.business_name || session.name,
+      email: session.email,
+      phone: session.profile?.phone || '',
+      altPhone: session.profile?.alt_phone || '',
+      taxId: session.profile?.tax_id || '',
+      category: 'Ferreteria',
+      preferredBranch: session.profile?.preferred_branch || '',
+      address: session.profile?.address || '',
+      city: session.profile?.city || '',
+      province: session.profile?.province || '',
+      pendingBalance: 0,
+      paymentHistory: [],
+      activityLog: [],
+      orderHistory: [],
+      points: 0,
+      lifetime_points: 0,
+      available_points: 0,
+      createdAt: new Date().toISOString(),
+      tier: 'Bronce',
+    }),
+    [session],
+  )
+  const client = clients.find((entry) => entry.id === session.id) ?? fallbackClient
   const [accountForm, setAccountForm] = useState(() => ({
     businessName: client.businessName ?? '',
     email: client.email ?? '',
@@ -2412,6 +2443,7 @@ export function ClientDashboard() {
   }
 
   const handleOpenAccountEdit = () => {
+    setAccountSaveError('')
     setAccountForm({
       businessName: client.businessName ?? '',
       email: client.email ?? '',
@@ -2431,25 +2463,52 @@ export function ClientDashboard() {
     setAccountForm((current) => ({ ...current, [field]: value }))
   }
 
-  const handleSaveAccount = () => {
-    saveClient(
-      {
-        ...client,
+  const handleSaveAccount = async () => {
+    setIsSavingAccount(true)
+    setAccountSaveError('')
+
+    try {
+      const result = await updateProfile({
         name: accountForm.businessName,
-        businessName: accountForm.businessName,
-        email: accountForm.email,
+        business_name: accountForm.businessName,
         phone: accountForm.phone,
-        altPhone: accountForm.altPhone,
-        taxId: accountForm.taxId,
-        category: accountForm.category,
-        preferredBranch: accountForm.preferredBranch,
+        alt_phone: accountForm.altPhone,
+        tax_id: accountForm.taxId,
         address: accountForm.address,
         city: accountForm.city,
         province: accountForm.province,
-      },
-      client.businessName || 'Cliente',
-    )
-    setIsAccountEditOpen(false)
+        preferred_branch: accountForm.preferredBranch,
+        metadata_json: {
+          category: accountForm.category,
+        },
+      })
+
+      if (!result.ok) {
+        setAccountSaveError(result.message)
+        return
+      }
+
+      saveClient(
+        {
+          ...client,
+          name: accountForm.businessName,
+          businessName: accountForm.businessName,
+          email: session.email,
+          phone: accountForm.phone,
+          altPhone: accountForm.altPhone,
+          taxId: accountForm.taxId,
+          category: accountForm.category,
+          preferredBranch: accountForm.preferredBranch,
+          address: accountForm.address,
+          city: accountForm.city,
+          province: accountForm.province,
+        },
+        client.businessName || 'Cliente',
+      )
+      setIsAccountEditOpen(false)
+    } finally {
+      setIsSavingAccount(false)
+    }
   }
 
   const handleSendClientChatMessage = (messageText = '') => {
@@ -2523,6 +2582,8 @@ export function ClientDashboard() {
             onChange={handleAccountFieldChange}
             onClose={() => setIsAccountEditOpen(false)}
             onSave={handleSaveAccount}
+            isSaving={isSavingAccount}
+            saveError={accountSaveError}
           />
         ) : null}
       </main>
@@ -2609,6 +2670,8 @@ export function ClientDashboard() {
           onChange={handleAccountFieldChange}
           onClose={() => setIsAccountEditOpen(false)}
           onSave={handleSaveAccount}
+          isSaving={isSavingAccount}
+          saveError={accountSaveError}
         />
       ) : null}
 

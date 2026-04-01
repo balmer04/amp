@@ -4,13 +4,13 @@ import { useAuth } from '../context/AuthContext'
 
 const quickAccessUsers = import.meta.env.DEV
   ? {
-    client: { email: 'cliente@amprev.com', password: 'cliente123' },
-    admin: { email: 'admin@amprev.com', password: 'admin123' },
-  }
+      client: { email: 'cliente@amprev.com', password: 'cliente123' },
+      admin: { email: 'admin@amprev.com', password: 'admin123' },
+    }
   : null
 
 export function LoginPage() {
-  const { session, login, isAuthenticated } = useAuth()
+  const { session, login, register, isAuthenticated, isRefreshing } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [formData, setFormData] = useState({
@@ -23,11 +23,13 @@ export function LoginPage() {
   const [showRequestForm, setShowRequestForm] = useState(false)
   const [isRequestSubmitting, setIsRequestSubmitting] = useState(false)
   const [requestSent, setRequestSent] = useState(false)
+  const [requestError, setRequestError] = useState('')
   const [requestData, setRequestData] = useState({
     nombre: '',
     cuit: '',
     telefono: '',
     email: '',
+    password: '',
   })
 
   if (isAuthenticated) {
@@ -73,18 +75,31 @@ export function LoginPage() {
     setRequestData((current) => ({ ...current, [name]: value }))
   }
 
-  const handleRequestSubmit = (event) => {
+  const handleRequestSubmit = async (event) => {
     event.preventDefault()
+    setRequestError('')
     setIsRequestSubmitting(true)
-    setTimeout(() => {
-      setIsRequestSubmitting(false)
+
+    try {
+      const result = await register({
+        name: requestData.nombre,
+        businessName: requestData.nombre,
+        taxId: requestData.cuit,
+        phone: requestData.telefono,
+        email: requestData.email,
+        password: requestData.password,
+      })
+
+      if (!result.ok) {
+        setRequestError(result.message)
+        return
+      }
+
       setRequestSent(true)
-      setTimeout(() => {
-        setShowRequestForm(false)
-        setRequestSent(false)
-        setRequestData({ nombre: '', cuit: '', telefono: '', email: '' })
-      }, 3500)
-    }, 1200)
+      navigate('/cliente', { replace: true })
+    } finally {
+      setIsRequestSubmitting(false)
+    }
   }
 
   const handleQuickAccess = async (role) => {
@@ -99,19 +114,19 @@ export function LoginPage() {
     <main className="login-page">
       <section className="login-hero">
         <div className="brand-lockup">
-          <div className="brand-badge" aria-label="Logo Andrés Merino">
+          <div className="brand-badge" aria-label="Logo Andres Merino">
             <img
               src="/branding/logo-cadena-pinturerias.png"
               alt="Cadena de Pinturerias"
               className="brand-logo-image"
             />
           </div>
-          <h1>Ingresá a tu espacio de trabajo</h1>
+          <h1>Ingresa a tu espacio de trabajo</h1>
         </div>
 
         <div className="login-card">
           <div className="card-glow" aria-hidden="true"></div>
-          <h2>Iniciá sesión</h2>
+          <h2>Inicia sesion</h2>
 
           <form className="login-form" onSubmit={handleSubmit}>
             <label className="field">
@@ -127,7 +142,7 @@ export function LoginPage() {
             </label>
 
             <label className="field">
-              <span>Contraseña</span>
+              <span>Contrasena</span>
               <input
                 type="password"
                 name="password"
@@ -140,20 +155,20 @@ export function LoginPage() {
 
             {error ? <p className="form-error">{error}</p> : null}
 
-            <button type="submit" className="primary-button" disabled={isSubmitting}>
-              {isSubmitting ? 'Ingresando…' : 'Ingresar'}
+            <button type="submit" className="primary-button" disabled={isSubmitting || isRefreshing}>
+              {isSubmitting || isRefreshing ? 'Ingresando...' : 'Ingresar'}
             </button>
           </form>
 
           {quickAccessUsers && (
             <div className="login-footer">
-              <p>Probá las vistas del mockup</p>
+              <p>Proba las vistas del mockup</p>
               <div className="quick-actions">
                 <button
                   type="button"
                   className="pill-button"
                   onClick={() => handleQuickAccess('client')}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isRefreshing}
                 >
                   Ver como cliente
                 </button>
@@ -161,7 +176,7 @@ export function LoginPage() {
                   type="button"
                   className="pill-button"
                   onClick={() => handleQuickAccess('admin')}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isRefreshing}
                 >
                   Ver como admin
                 </button>
@@ -171,50 +186,100 @@ export function LoginPage() {
 
           <div className="login-request-card">
             <p className="login-request-eyebrow">Acceso mayorista</p>
-            <h3>Solicitá tu cuenta profesional</h3>
+            <h3>Crea tu cuenta profesional</h3>
 
             {!showRequestForm ? (
               <>
                 <p>
-                  Si tenés una pinturería, empresa o perfil profesional, pedí acceso al
-                  canal mayorista de Andrés Merino.
+                  Si tenes una pintureria, empresa o perfil profesional, crea tu cuenta
+                  para acceder al canal mayorista de Andres Merino.
                 </p>
                 <button
                   type="button"
                   className="login-request-button"
                   onClick={() => setShowRequestForm(true)}
                 >
-                  Solicitar cuenta profesional
+                  Crear cuenta profesional
                 </button>
               </>
             ) : requestSent ? (
               <p style={{ color: '#10b981', fontWeight: '600', marginTop: '1rem' }}>
-                ¡Solicitud enviada! Nos pondremos en contacto pronto.
+                Cuenta creada con exito. Redirigiendo a tu panel...
               </p>
             ) : (
               <form className="request-form" onSubmit={handleRequestSubmit}>
                 <label className="field">
-                  <span>Nombre o Razón Social</span>
-                  <input type="text" name="nombre" placeholder="Pinturería Ej." value={requestData.nombre} onChange={handleRequestChange} required />
+                  <span>Nombre o Razon Social</span>
+                  <input
+                    type="text"
+                    name="nombre"
+                    placeholder="Pintureria Ej."
+                    value={requestData.nombre}
+                    onChange={handleRequestChange}
+                    required
+                  />
                 </label>
                 <label className="field">
                   <span>CUIT / RUT</span>
-                  <input type="text" name="cuit" placeholder="XX-XXXXXXXX-X" value={requestData.cuit} onChange={handleRequestChange} required />
+                  <input
+                    type="text"
+                    name="cuit"
+                    placeholder="XX-XXXXXXXX-X"
+                    value={requestData.cuit}
+                    onChange={handleRequestChange}
+                    required
+                  />
                 </label>
                 <label className="field">
-                  <span>Teléfono</span>
-                  <input type="tel" name="telefono" placeholder="11 1234 5678" value={requestData.telefono} onChange={handleRequestChange} required />
+                  <span>Telefono</span>
+                  <input
+                    type="tel"
+                    name="telefono"
+                    placeholder="11 1234 5678"
+                    value={requestData.telefono}
+                    onChange={handleRequestChange}
+                    required
+                  />
                 </label>
                 <label className="field">
                   <span>Email</span>
-                  <input type="email" name="email" placeholder="correo@ejemplo.com" value={requestData.email} onChange={handleRequestChange} required />
+                  <input
+                    type="email"
+                    name="email"
+                    placeholder="correo@ejemplo.com"
+                    value={requestData.email}
+                    onChange={handleRequestChange}
+                    required
+                  />
                 </label>
+                <label className="field">
+                  <span>Contrasena</span>
+                  <input
+                    type="password"
+                    name="password"
+                    placeholder="Minimo 6 caracteres"
+                    value={requestData.password}
+                    onChange={handleRequestChange}
+                    minLength={6}
+                    required
+                  />
+                </label>
+
+                {requestError ? <p className="form-error">{requestError}</p> : null}
+
                 <div className="request-form-actions">
-                  <button type="button" className="secondary-button" onClick={() => setShowRequestForm(false)}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setShowRequestForm(false)
+                      setRequestError('')
+                    }}
+                  >
                     Cancelar
                   </button>
                   <button type="submit" className="primary-button" disabled={isRequestSubmitting}>
-                    {isRequestSubmitting ? 'Enviando...' : 'Enviar Solicitud'}
+                    {isRequestSubmitting ? 'Creando cuenta...' : 'Crear cuenta'}
                   </button>
                 </div>
               </form>
