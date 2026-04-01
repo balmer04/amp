@@ -305,13 +305,18 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
   const model = '@cf/meta/llama-3.1-8b-instruct';
 
   try {
+    const cleanMessages = req.body.messages.filter(m => m.role !== 'system');
+    
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'system', content: systemPrompt }, ...req.body.messages], tools })
+      body: JSON.stringify({ messages: [{ role: 'system', content: systemPrompt }, ...cleanMessages], tools })
     });
 
-    if (!response.ok) return res.status(response.status).json({ ok: false, error: 'Error AI Server' });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ ok: false, error: 'Cloudflare devolvió error: ' + errText });
+    }
     let data = await response.json();
     
     if (data.result.tool_calls && data.result.tool_calls.length > 0) {
@@ -324,7 +329,7 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
         body: JSON.stringify({
           messages: [
             { role: 'system', content: systemPrompt },
-            ...req.body.messages,
+            ...cleanMessages,
             { role: 'user', content: `[Admin Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolvió:\n${toolResult}\nResponde a mi pedido usando esto.]` }
           ]
         })
@@ -334,7 +339,8 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
     
     res.json({ ok: true, result: { ...data.result, response: data.result.response || "" } });
   } catch (err) {
-    res.status(500).json({ ok: false, error: 'Error general IA' });
+    console.error("AI Catch:", err);
+    res.status(500).json({ ok: false, error: 'Error general IA: ' + err.message });
   }
 });
 
