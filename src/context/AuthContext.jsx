@@ -4,23 +4,6 @@ const STORAGE_KEY = 'amp-reventa-session'
 
 const AuthContext = createContext(null)
 
-const demoUsers = [
-  {
-    id: 1,
-    email: 'cliente@amprev.com',
-    password: 'cliente123',
-    role: 'client',
-    name: 'Cliente Demo',
-  },
-  {
-    id: 99,
-    email: 'admin@amprev.com',
-    password: 'admin123',
-    role: 'admin',
-    name: 'Administrador Demo',
-  },
-]
-
 function getStoredSession() {
   const saved = localStorage.getItem(STORAGE_KEY)
 
@@ -39,32 +22,38 @@ function getStoredSession() {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(getStoredSession)
 
-  const login = ({ email, password }) => {
-    const normalizedEmail = email.trim().toLowerCase()
-    const user = demoUsers.find(
-      (candidate) =>
-        candidate.email === normalizedEmail && candidate.password === password,
-    )
+  const login = async ({ email, password }) => {
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
 
-    if (!user) {
-      return {
-        ok: false,
-        message:
-          'No encontramos esa combinación. Probá con cliente@amprev.com o admin@amprev.com.',
+      const result = await response.json()
+
+      if (!result.ok) {
+        return {
+          ok: false,
+          message: result.message || 'No encontramos esa combinación. Probá con cliente@amprev.com o admin@amprev.com.',
+        }
       }
+
+      const nextSession = {
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+        name: result.user.name,
+        token: result.token,
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession))
+      setSession(nextSession)
+
+      return { ok: true, role: result.user.role }
+    } catch (err) {
+      return { ok: false, message: 'Error de conexión con el servidor.' }
     }
-
-    const nextSession = {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-    }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession))
-    setSession(nextSession)
-
-    return { ok: true, role: user.role }
   }
 
   const logout = () => {

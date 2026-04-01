@@ -8,9 +8,20 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.wrangler
 dist
 dist-ssr
 *.local
+
+# Environment variables (credentials)
+.env
+.env.*
+backend/.env
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
 
 # Editor directories and files
 .vscode/*

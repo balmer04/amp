@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useAuth } from './AuthContext'
 import {
   DEFAULT_AUDIT_LOG,
   DEFAULT_CLIENTS,
@@ -111,7 +112,7 @@ function normalizeStoredState(rawState) {
     })),
     products: nextState.products.map((product) => ({
       ...product,
-      currentStock: 1000,
+      currentStock: product.currentStock ?? 0,
     })),
   }
 }
@@ -217,13 +218,42 @@ function inferImportedCode(category) {
 }
 
 export function AppDataProvider({ children }) {
+  const { session } = useAuth()
   const [state, setState] = useState(getStoredState)
+  const isUpdatingRef = useRef(false) // Lock para evitar sobreescritura por polling durante un envío
+
 
   useEffect(() => {
-    const normalizedState = normalizeStoredState(state)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedState))
-    localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(normalizedState.products))
-  }, [])
+    if (!session?.token) return;
+
+    const fetchState = () => {
+      fetch('/api/state', {
+        headers: { 'Authorization': `Bearer ${session.token}` }
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok && data.state) {
+          // Si estamos enviando algo, ignoramos este tick del polling
+          if (isUpdatingRef.current) return;
+
+          const normalized = normalizeStoredState(data.state)
+          const serialized = JSON.stringify(normalized);
+          setState(prev => {
+             const prevSerialized = JSON.stringify(prev);
+             if (prevSerialized === serialized) return prev;
+             return normalized;
+          });
+          localStorage.setItem(STORAGE_KEY, serialized);
+        }
+      })
+      .catch(e => console.error('Failed to sync state', e));
+    };
+
+    // Polling cada 3 segundos
+    fetchState();
+    const interval = setInterval(fetchState, 3000);
+    return () => clearInterval(interval);
+  }, [session?.token])
 
   useEffect(() => {
     const handleStorage = (event) => {
@@ -271,6 +301,25 @@ export function AppDataProvider({ children }) {
         const channel = new BroadcastChannel(BROADCAST_CHANNEL_KEY)
         channel.postMessage({ type: 'state-update', payload: normalizedNext })
         channel.close()
+      }
+
+      if (session?.token && session.role === 'admin') {
+        isUpdatingRef.current = true;
+        fetch('/api/state', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.token}` 
+          },
+          body: JSON.stringify({ state: normalizedNext }),
+        }).then(() => {
+           // Pequeño delay antes de liberar el lock para que el polling
+           // no traiga el estado viejo justo un ms antes de que impacte en DB
+           setTimeout(() => { isUpdatingRef.current = false; }, 500);
+        }).catch(err => {
+           console.error('Failed to sync to server', err);
+           isUpdatingRef.current = false;
+        });
       }
 
       return normalizedNext
@@ -1045,6 +1094,37 @@ export function AppDataProvider({ children }) {
       }
     })
 
+    // Push client order to server
+    if (session?.token && session.role === 'client') {
+      const orderToPush = {
+        id: createdOrderId,
+        clientId,
+        status: 'Pendiente',
+        total: 0, // Server re-calculates
+        items,
+        createdAt: new Date().toISOString(),
+        deliveryType: deliveryType === 'pickup' ? 'Retiro en sucursal' : 'Envio a obra',
+        branch,
+        shippingCost: Number(shippingCost) || 0,
+        billingName,
+        taxId,
+        notes,
+        adminNotes: '',
+        stockDiscounted: false,
+        pointsGranted: false,
+        lifetimePointsGranted: false,
+      };
+      
+      fetch('/api/client/order', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.token}` 
+        },
+        body: JSON.stringify({ order: orderToPush }),
+      }).catch(err => console.error(err))
+    }
+
     return createdOrderId
   }
 
@@ -1094,6 +1174,8 @@ export function AppDataProvider({ children }) {
       return
     }
 
+    let nextChatsForServer = [];
+
     updateState((current) => {
       const timestamp = new Date().toISOString()
       const nextChats = normalizeChats(current.clients, current.chats).map((chat) => {
@@ -1130,9 +1212,10 @@ export function AppDataProvider({ children }) {
         }
       })
 
+      nextChatsForServer = nextChats;
       const client = current.clients.find((entry) => entry.id === clientId)
-
-      return {
+      
+      const nextNormalizedState = {
         ...current,
         chats: nextChats,
         auditLog:
@@ -1140,7 +1223,31 @@ export function AppDataProvider({ children }) {
             ? appendAuditEntry(current.auditLog, senderName, 'respondio el chat de', client.businessName)
             : current.auditLog,
       }
+
+      return nextNormalizedState
     })
+
+    // Sincronización con el servidor
+    if (session?.token) {
+        if (session.role === 'client') {
+            isUpdatingRef.current = true;
+            fetch('/api/client/chat', {
+                method: 'POST',
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.token}` 
+                },
+                body: JSON.stringify({ chats: nextChatsForServer }),
+            })
+            .then(() => {
+              setTimeout(() => { isUpdatingRef.current = false; }, 500);
+            })
+            .catch(err => {
+              console.error(err);
+              isUpdatingRef.current = false;
+            });
+        }
+    }
   }
 
   const setChatTyping = (clientId, senderRole, isTyping) => {

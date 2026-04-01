@@ -2,16 +2,12 @@ import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-const quickAccessUsers = {
-  client: {
-    email: 'cliente@amprev.com',
-    password: 'cliente123',
-  },
-  admin: {
-    email: 'admin@amprev.com',
-    password: 'admin123',
-  },
-}
+const quickAccessUsers = import.meta.env.DEV
+  ? {
+      client: { email: 'cliente@amprev.com', password: 'cliente123' },
+      admin: { email: 'admin@amprev.com', password: 'admin123' },
+    }
+  : null
 
 export function LoginPage() {
   const { session, login, isAuthenticated } = useAuth()
@@ -22,6 +18,7 @@ export function LoginPage() {
     password: '',
   })
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   if (isAuthenticated) {
     return <Navigate to={session.role === 'admin' ? '/admin' : '/cliente'} replace />
@@ -32,22 +29,27 @@ export function LoginPage() {
     setFormData((current) => ({ ...current, [name]: value }))
   }
 
-  const submitLogin = (credentials = formData) => {
-    const result = login(credentials)
+  const submitLogin = async (credentials = formData) => {
+    setIsSubmitting(true)
+    try {
+      const result = await login(credentials)
 
-    if (!result.ok) {
-      setError(result.message)
-      return
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+
+      const redirectPath =
+        location.state?.from && location.state.from !== '/'
+          ? location.state.from
+          : result.role === 'admin'
+            ? '/admin'
+            : '/cliente'
+
+      navigate(redirectPath, { replace: true })
+    } finally {
+      setIsSubmitting(false)
     }
-
-    const redirectPath =
-      location.state?.from && location.state.from !== '/'
-        ? location.state.from
-        : result.role === 'admin'
-          ? '/admin'
-          : '/cliente'
-
-    navigate(redirectPath, { replace: true })
   }
 
   const handleSubmit = (event) => {
@@ -56,11 +58,12 @@ export function LoginPage() {
     submitLogin()
   }
 
-  const handleQuickAccess = (role) => {
+  const handleQuickAccess = async (role) => {
+    if (!quickAccessUsers) return
     const credentials = quickAccessUsers[role]
     setFormData(credentials)
     setError('')
-    submitLogin(credentials)
+    await submitLogin(credentials)
   }
 
   return (
@@ -115,30 +118,34 @@ export function LoginPage() {
 
             {error ? <p className="form-error">{error}</p> : null}
 
-            <button type="submit" className="primary-button">
-              Ingresar
+            <button type="submit" className="primary-button" disabled={isSubmitting}>
+              {isSubmitting ? 'Ingresando…' : 'Ingresar'}
             </button>
           </form>
 
-          <div className="login-footer">
-            <p>Probá las vistas del mockup</p>
-            <div className="quick-actions">
-              <button
-                type="button"
-                className="pill-button"
-                onClick={() => handleQuickAccess('client')}
-              >
-                Ver como cliente
-              </button>
-              <button
-                type="button"
-                className="pill-button"
-                onClick={() => handleQuickAccess('admin')}
-              >
-                Ver como admin
-              </button>
+          {quickAccessUsers && (
+            <div className="login-footer">
+              <p>Probá las vistas del mockup</p>
+              <div className="quick-actions">
+                <button
+                  type="button"
+                  className="pill-button"
+                  onClick={() => handleQuickAccess('client')}
+                  disabled={isSubmitting}
+                >
+                  Ver como cliente
+                </button>
+                <button
+                  type="button"
+                  className="pill-button"
+                  onClick={() => handleQuickAccess('admin')}
+                  disabled={isSubmitting}
+                >
+                  Ver como admin
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="login-request-card">
             <p className="login-request-eyebrow">Acceso mayorista</p>

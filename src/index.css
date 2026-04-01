@@ -3,6 +3,7 @@
     Inter,
     'Segoe UI',
     sans-serif;
+  font-size: 14px;
   line-height: 1.5;
   font-weight: 400;
   color: #18242e;
@@ -11,6 +12,17 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Design tokens */
+  --color-brand-blue: #123281;
+  --color-brand-red: #d62128;
+  --color-error: #c0392b;
+  --color-text-primary: #13212c;
+  --color-text-secondary: #5c6d82;
+  --color-border: #dbe3ef;
+  --radius-card: 0.5rem;
+  --radius-button: 0.35rem;
+  --radius-pill: 999px;
 }
 
 * {

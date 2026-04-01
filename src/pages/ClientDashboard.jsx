@@ -1,7 +1,8 @@
-﻿import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
+import ChatCliente from '../components/ChatCliente'
 import {
   buildOrderRows,
   buildQuantityMap,
@@ -403,34 +404,7 @@ function ClientChatPage({
 function ClientAiPage() {
   return (
     <section className="client-ai-layout">
-      <article className="client-card client-ai-hero">
-        <span className="client-card-eyebrow">Proximamente</span>
-        <h3>Asistente comercial para clientes</h3>
-        <p>
-          Esta seccion queda preparada para incorporar una IA que ayude a buscar productos,
-          recomendar cantidades, explicar promociones y asistir durante el armado del pedido.
-        </p>
-      </article>
-
-      <div className="client-ai-grid">
-        <article className="client-card">
-          <h4>Lo que podria hacer</h4>
-          <ul className="client-ai-list">
-            <li>Responder dudas sobre productos, categorias y marcas.</li>
-            <li>Sugerir combinaciones para una compra rapida.</li>
-            <li>Explicar puntos, beneficios y estado de pedidos.</li>
-          </ul>
-        </article>
-
-        <article className="client-card">
-          <h4>Como se integraria</h4>
-          <ul className="client-ai-list">
-            <li>Chat conectado a tu cuenta y al catalogo real.</li>
-            <li>Lectura del pedido en curso para dar recomendaciones utiles.</li>
-            <li>Soporte contextual dentro de Inicio, Armar pedido y Mi cuenta.</li>
-          </ul>
-        </article>
-      </div>
+      <ChatCliente />
     </section>
   )
 }

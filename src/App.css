@@ -164,7 +164,7 @@
 
 .form-error {
   margin: 0;
-  color: #ac251c;
+  color: var(--color-error);
   font-size: 0.94rem;
 }
 

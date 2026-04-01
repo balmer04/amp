@@ -2,6 +2,7 @@ import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
+import ChatAdmin from '../components/ChatAdmin'
 import {
   ORDER_STATUS_OPTIONS,
   PRODUCT_BENEFIT_CATEGORIES,
@@ -380,36 +381,7 @@ function MetricCard({ title, value, detail, tone }) {
 function AdminAiSection() {
   return (
     <section className="admin-section">
-      <div className="admin-ai-grid">
-        <article className="admin-card admin-ai-hero">
-          <h3>Modulo preparado para operaciones y CRM</h3>
-          <p>
-            Esta vista deja lista la estructura para sumar una IA orientada al equipo admin:
-            lectura de pedidos, resumen de clientes, sugerencias de stock y ayuda para responder
-            conversaciones.
-          </p>
-        </article>
-
-        <article className="admin-card">
-          <h3>Posibles funciones</h3>
-          <ul className="admin-ai-list">
-            <li>Priorizar pedidos segun urgencia y estado.</li>
-            <li>Resumir cuentas con oportunidad comercial o riesgo de cobranza.</li>
-            <li>Sugerir respuestas para chats y seguimiento comercial.</li>
-            <li>Detectar alertas de stock y oportunidades de recompra.</li>
-          </ul>
-        </article>
-
-        <article className="admin-card">
-          <h3>Como se podria integrar</h3>
-          <ul className="admin-ai-list">
-            <li>Con un chat interno conectado al CRM y al historial del cliente.</li>
-            <li>Con accesos directos dentro de Pedidos, Clientes, Stock y Chats.</li>
-            <li>Con permisos separados para cliente y administracion.</li>
-            <li>Con un backend de IA que consulte datos reales del sistema.</li>
-          </ul>
-        </article>
-      </div>
+      <ChatAdmin />
     </section>
   )
 }
@@ -1647,6 +1619,31 @@ function QuickNoteModal({ client, onClose, onSave }) {
 }
 
 function ClientAiModal({ client, clientOrders, products, onClose }) {
+  const { session } = useAuth()
+  const [aiRecommendation, setAiRecommendation] = useState('')
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+
+  useEffect(() => {
+    if (!client || !session?.token) return;
+    
+    setIsAnalyzing(true);
+    fetch('/api/ai/analyze-client', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.token}` 
+      },
+      body: JSON.stringify({ clientId: client.id })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) setAiRecommendation(data.recommendation);
+      else setAiRecommendation('No se pudo generar el análisis automático.');
+    })
+    .catch(() => setAiRecommendation('Error de conexión con la IA.'))
+    .finally(() => setIsAnalyzing(false));
+  }, [client, session?.token]);
+
   if (!client) {
     return null
   }
@@ -1709,8 +1706,15 @@ function ClientAiModal({ client, clientOrders, products, onClose }) {
 
         <div className="admin-client-ai-grid">
           <div className="admin-client-ai-highlight">
-            <h4>Resumen sugerido</h4>
-            <p>{recommendation}</p>
+            <h4>Análisis Comercial de IA</h4>
+            {isAnalyzing ? (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', opacity: 0.7 }}>
+                <span className="typing-indicator" style={{ display: 'inline-flex', padding: 0 }}><span></span><span></span><span></span></span>
+                <p style={{ margin: 0, fontStyle: 'italic' }}>Analizando facturación, pedidos y frecuencias de este cliente...</p>
+              </div>
+            ) : (
+              <p>{aiRecommendation || recommendation}</p>
+            )}
           </div>
 
           <div className="admin-client-ai-stats">

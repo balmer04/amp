@@ -1,0 +1,7 @@
+name = "cliente-chat-worker"
+main = "src/index.js"
+compatibility_date = "2024-03-20"
+
+# Habilitar el acceso a Workers AI en este proyecto
+[ai]
+binding = "AI"

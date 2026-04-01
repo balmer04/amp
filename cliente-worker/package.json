@@ -1,0 +1,13 @@
+{
+  "name": "cliente-chat-worker",
+  "version": "1.0.0",
+  "description": "Worker público para el Client Dashboard",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

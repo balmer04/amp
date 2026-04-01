@@ -1,0 +1,13 @@
+name = "admin-chat-worker"
+main = "src/index.js"
+compatibility_date = "2024-03-20"
+
+# Habilitar el acceso a Workers AI en este proyecto
+[ai]
+binding = "AI"
+
+# Variables de entorno no secretas.
+# Nota: Durante desarrollo esto funciona bien. 
+# Para producción es mejor subir este secreto directamente al dashboard de Cloudflare con: npx wrangler secret put ADMIN_SECRET_TOKEN
+[vars]
+ADMIN_SECRET_TOKEN = "super-secreto-admin-123456"
