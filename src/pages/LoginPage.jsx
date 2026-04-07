@@ -114,14 +114,11 @@ export function LoginPage() {
     <main className="login-page">
       <section className="login-hero">
         <div className="brand-lockup">
-          <div className="brand-badge" aria-label="Logo Andres Merino">
-            <img
-              src="/branding/logo-cadena-pinturerias.png"
-              alt="Cadena de Pinturerias"
-              className="brand-logo-image"
-            />
+          <div className="brand-badge" aria-label="Nexo">
+            <p className="brand-overline">Software para distribuidoras</p>
+            <h1 className="brand-name-hero">Nexo</h1>
           </div>
-          <h1>Ingresa a tu espacio de trabajo</h1>
+          <p className="brand-copy">Gestioná clientes, pedidos, stock y facturación desde un solo lugar.</p>
         </div>
 
         <div className="login-card">
@@ -191,8 +188,8 @@ export function LoginPage() {
             {!showRequestForm ? (
               <>
                 <p>
-                  Si tenes una pintureria, empresa o perfil profesional, crea tu cuenta
-                  para acceder al canal mayorista de Andres Merino.
+                  Si tenés una empresa o perfil profesional, creá tu cuenta
+                  para acceder al portal mayorista.
                 </p>
                 <button
                   type="button"
