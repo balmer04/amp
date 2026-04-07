@@ -756,16 +756,21 @@ app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, 
 
 // â”€â”€ CONFIGURACIÃ“N DE IA CON HERRAMIENTAS DIRECTAS A POSTGRES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const ADMIN_TOOLS = [
+  // ── Clientes ──────────────────────────────────────────────────────────────
+  {
+    name: "get_client_details",
+    description: "Busca un cliente por nombre, razon social o CUIT y devuelve su perfil completo: contacto, condicion IVA, saldo pendiente, historial de pedidos, ultima compra.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Nombre, razon social o CUIT del cliente" } }, required: ["query"] }
+  },
   {
     name: "update_client_status",
-    description: "Cambia el estado de un cliente (ej. Activo, Inactivo, Bloqueado).",
+    description: "Cambia el estado de un cliente (ej. Activo, Inactivo, Bloqueado). Usar get_client_details para obtener el ID antes.",
     parameters: {
       type: "object",
       properties: { customerId: { type: "integer" }, status: { type: "string" } },
       required: ["customerId", "status"]
     }
   },
-  { name: "get_stock_alerts", description: "Consulta productos con stock critico (bajo).", parameters: { type: "object", properties: {} } },
   {
     name: "get_inactive_clients",
     description: "Busca clientes que no compraron en los ultimos N dias.",
@@ -777,10 +782,49 @@ const ADMIN_TOOLS = [
     parameters: { type: "object", properties: { days_without_purchase: { type: "integer" } } }
   },
   {
-    name: "get_inventory_snapshot",
-    description: "Devuelve una vista rapida del stock actual, incluyendo productos criticos, bajos y con mayor stock.",
+    name: "get_top_clients",
+    description: "Devuelve el ranking de mejores clientes por facturacion en los ultimos N meses.",
+    parameters: { type: "object", properties: { months: { type: "integer" }, limit: { type: "integer" } } }
+  },
+  {
+    name: "get_overdue_balances",
+    description: "Lista clientes con saldo pendiente mayor a un monto minimo, ordenados por deuda de mayor a menor.",
+    parameters: { type: "object", properties: { min_amount: { type: "number", description: "Monto minimo de deuda (0 para todos)" } } }
+  },
+  {
+    name: "create_account_movement",
+    description: "Registra un movimiento en la cuenta corriente de un cliente: pago, nota de credito o ajuste. Usar get_client_details para obtener el ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        clientId: { type: "integer" },
+        tipo: { type: "string", description: "pago | nota_credito | ajuste" },
+        monto: { type: "number" },
+        descripcion: { type: "string" }
+      },
+      required: ["clientId", "tipo", "monto"]
+    }
+  },
+  // ── Pedidos ───────────────────────────────────────────────────────────────
+  {
+    name: "get_pending_orders",
+    description: "Devuelve todos los pedidos con estado Pendiente o En preparacion, con cliente, total y fecha.",
     parameters: { type: "object", properties: { limit: { type: "integer" } } }
   },
+  {
+    name: "update_order_status",
+    description: "Cambia el estado de un pedido. Estados validos: Pendiente, En preparacion, Enviado, Entregado, Cancelado.",
+    parameters: {
+      type: "object",
+      properties: {
+        orderId: { type: "string", description: "ID del pedido" },
+        newStatus: { type: "string", description: "Nuevo estado del pedido" }
+      },
+      required: ["orderId", "newStatus"]
+    }
+  },
+  { name: "get_today_sales_summary", description: "Obtiene un resumen de los pedidos del dia de hoy.", parameters: { type: "object", properties: {} } },
+  // ── Ventas y productos ────────────────────────────────────────────────────
   {
     name: "get_month_sales_summary",
     description: "Resume ventas de un mes especifico. months_ago 0 es el mes actual, 1 el anterior, 2 hace dos meses.",
@@ -791,6 +835,19 @@ const ADMIN_TOOLS = [
     description: "Devuelve ventas agregadas por mes para analizar tendencia reciente.",
     parameters: { type: "object", properties: { months: { type: "integer" } } }
   },
+  {
+    name: "get_top_products",
+    description: "Devuelve el ranking de productos mas vendidos por unidades en los ultimos N meses.",
+    parameters: { type: "object", properties: { months: { type: "integer" }, limit: { type: "integer" } } }
+  },
+  // ── Stock ─────────────────────────────────────────────────────────────────
+  { name: "get_stock_alerts", description: "Consulta productos con stock critico o por debajo del minimo configurado.", parameters: { type: "object", properties: {} } },
+  {
+    name: "get_inventory_snapshot",
+    description: "Devuelve una vista rapida del stock actual, incluyendo productos criticos, bajos y con mayor stock.",
+    parameters: { type: "object", properties: { limit: { type: "integer" } } }
+  },
+  // ── Forecasting ───────────────────────────────────────────────────────────
   {
     name: "forecast_purchase_recommendations",
     description: "Proyecta demanda futura en base a ventas recientes y sugiere cuanto comprar a fabrica por producto.",
@@ -803,8 +860,7 @@ const ADMIN_TOOLS = [
       }
     }
   },
-  { name: "get_today_sales_summary", description: "Obtiene un resumen de los pedidos del dia de hoy.", parameters: { type: "object", properties: {} } },
-  { name: "get_inventory_replenishment_suggestions", description: "Sugiere que comprar a fabrica.", parameters: { type: "object", properties: {} } }
+  { name: "get_inventory_replenishment_suggestions", description: "Sugiere que comprar a fabrica basado en stock bajo.", parameters: { type: "object", properties: {} } }
 ];
 
 const CLIENT_TOOLS = [
@@ -898,10 +954,147 @@ const executeTool = async (functionName, args, pool) => {
   const { rows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
   const state = rows.length > 0 ? JSON.parse(rows[0].state_json) : { products: [], clients: [], orders: [] };
 
+  if (functionName === 'get_client_details') {
+    const q = (args.query || '').toLowerCase();
+    const client = state.clients.find(c =>
+      (c.businessName || '').toLowerCase().includes(q) ||
+      (c.contactName || '').toLowerCase().includes(q) ||
+      (c.cuit || '').includes(q)
+    );
+    if (!client) return `No se encontro ningun cliente que coincida con "${args.query}".`;
+    const clientOrders = state.orders.filter(o => o.clientId === client.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const lastOrder = clientOrders[0];
+    const totalSpent = clientOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const pendingBalance = Number(client.pendingBalance || 0);
+    const creditLimit = Number(client.creditLimit || 0);
+    return [
+      `CLIENTE: ${client.businessName}`,
+      `- ID interno: ${client.id}`,
+      `- CUIT: ${client.cuit || 'N/D'}`,
+      `- Condicion IVA: ${client.condicionIva || client.condicion_iva || 'N/D'}`,
+      `- Contacto: ${client.contactName || 'N/D'} | Tel: ${client.phone || 'N/D'}`,
+      `- Email: ${client.email || 'N/D'}`,
+      `- Estado: ${client.status || 'N/D'}`,
+      `- Saldo pendiente: $${pendingBalance.toLocaleString('es-AR')}`,
+      `- Limite de credito: $${creditLimit.toLocaleString('es-AR')}`,
+      `- Disponible: $${Math.max(creditLimit - pendingBalance, 0).toLocaleString('es-AR')}`,
+      `- Pedidos totales: ${clientOrders.length}`,
+      `- Facturacion historica: $${Math.round(totalSpent).toLocaleString('es-AR')}`,
+      `- Ultima compra: ${lastOrder?.createdAt ? new Date(lastOrder.createdAt).toLocaleDateString('es-AR') : 'Sin compras'}`,
+      `- Ultimo pedido: ${lastOrder ? `#${lastOrder.id} | $${(lastOrder.total || 0).toLocaleString('es-AR')} | estado: ${lastOrder.status}` : 'N/D'}`,
+    ].join('\n');
+  }
+  if (functionName === 'get_pending_orders') {
+    const limit = Math.max(Number(args?.limit) || 30, 1);
+    const PENDING_STATUSES = ['Pendiente', 'En preparacion', 'En preparación', 'Confirmado', 'En proceso'];
+    const pending = state.orders
+      .filter(o => PENDING_STATUSES.some(s => s.toLowerCase() === (o.status || '').toLowerCase()))
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .slice(0, limit);
+    if (pending.length === 0) return 'No hay pedidos pendientes en este momento.';
+    const lines = pending.map(o => {
+      const client = state.clients.find(c => c.id === o.clientId);
+      return `- Pedido ${o.id} | ${client?.businessName || 'Cliente desconocido'} | $${(o.total || 0).toLocaleString('es-AR')} | estado: ${o.status} | fecha: ${o.createdAt ? new Date(o.createdAt).toLocaleDateString('es-AR') : 'N/D'}`;
+    });
+    return [`PEDIDOS PENDIENTES (${pending.length}):`, ...lines].join('\n');
+  }
+  if (functionName === 'update_order_status') {
+    const order = state.orders.find(o => String(o.id) === String(args.orderId));
+    if (!order) return `No se encontro el pedido ${args.orderId}.`;
+    const VALID_STATUSES = ['Pendiente', 'En preparacion', 'En preparación', 'Enviado', 'Entregado', 'Cancelado'];
+    const matchedStatus = VALID_STATUSES.find(s => s.toLowerCase() === (args.newStatus || '').toLowerCase()) || args.newStatus;
+    const prevStatus = order.status;
+    order.status = matchedStatus;
+    if (!order.history) order.history = [];
+    order.history.push({ status: matchedStatus, date: new Date().toISOString(), note: 'Actualizado por asistente IA' });
+    await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [JSON.stringify(state)]);
+    return `Pedido ${args.orderId}: estado cambiado de "${prevStatus}" a "${matchedStatus}".`;
+  }
+  if (functionName === 'get_top_clients') {
+    const months = Math.min(Math.max(Number(args?.months) || 3, 1), 12);
+    const limit = Math.max(Number(args?.limit) || 10, 1);
+    const relevantOrders = [];
+    for (let offset = 0; offset < months; offset++) {
+      const { start, end } = getMonthWindow(offset);
+      relevantOrders.push(...getDeliveredLikeOrders(getOrdersInWindow(state.orders, start, end)));
+    }
+    const clientTotals = new Map();
+    relevantOrders.forEach(o => {
+      const current = clientTotals.get(o.clientId) || { revenue: 0, orders: 0 };
+      current.revenue += Number(o.total) || 0;
+      current.orders += 1;
+      clientTotals.set(o.clientId, current);
+    });
+    const ranking = [...clientTotals.entries()]
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .slice(0, limit)
+      .map(([clientId, data], i) => {
+        const client = state.clients.find(c => c.id === clientId);
+        return `${i + 1}. ${client?.businessName || 'Desconocido'} | $${Math.round(data.revenue).toLocaleString('es-AR')} | ${data.orders} pedidos`;
+      });
+    if (ranking.length === 0) return `Sin ventas en los ultimos ${months} meses.`;
+    return [`TOP ${limit} CLIENTES (ultimos ${months} meses):`, ...ranking].join('\n');
+  }
+  if (functionName === 'get_top_products') {
+    const months = Math.min(Math.max(Number(args?.months) || 3, 1), 12);
+    const limit = Math.max(Number(args?.limit) || 10, 1);
+    const relevantOrders = [];
+    for (let offset = 0; offset < months; offset++) {
+      const { start, end } = getMonthWindow(offset);
+      relevantOrders.push(...getDeliveredLikeOrders(getOrdersInWindow(state.orders, start, end)));
+    }
+    const ranking = [...aggregateSalesByProduct(relevantOrders).values()]
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, limit)
+      .map((entry, i) => {
+        const product = state.products.find(p => p.id === entry.productId);
+        return `${i + 1}. ${product?.name || `Producto ${entry.productId}`} | ${entry.qty} unidades | $${Math.round(entry.revenue).toLocaleString('es-AR')} | ${entry.orders} pedidos`;
+      });
+    if (ranking.length === 0) return `Sin ventas registradas en los ultimos ${months} meses.`;
+    return [`TOP ${limit} PRODUCTOS (ultimos ${months} meses):`, ...ranking].join('\n');
+  }
+  if (functionName === 'get_overdue_balances') {
+    const minAmount = Math.max(Number(args?.min_amount) || 0, 0);
+    const overdue = state.clients
+      .filter(c => Number(c.pendingBalance || 0) > minAmount)
+      .sort((a, b) => Number(b.pendingBalance) - Number(a.pendingBalance))
+      .slice(0, 25);
+    if (overdue.length === 0) return `No hay clientes con saldo pendiente${minAmount > 0 ? ` mayor a $${minAmount}` : ''}.`;
+    const total = overdue.reduce((sum, c) => sum + Number(c.pendingBalance || 0), 0);
+    const lines = overdue.map(c => {
+      const balance = Number(c.pendingBalance || 0);
+      const limit_ = Number(c.creditLimit || 0);
+      const usage = limit_ > 0 ? ` (${Math.round(balance / limit_ * 100)}% del limite)` : '';
+      return `- ${c.businessName}: $${balance.toLocaleString('es-AR')}${usage} | estado: ${c.status || 'N/D'}`;
+    });
+    return [`SALDOS PENDIENTES (${overdue.length} clientes):`, `Total: $${Math.round(total).toLocaleString('es-AR')}`, ...lines].join('\n');
+  }
+  if (functionName === 'create_account_movement') {
+    const client = state.clients.find(c => c.id === Number(args.clientId));
+    if (!client) return `Cliente ID ${args.clientId} no encontrado.`;
+    const VALID_TIPOS = ['pago', 'nota_credito', 'ajuste'];
+    const tipo = (args.tipo || '').toLowerCase();
+    if (!VALID_TIPOS.includes(tipo)) return `Tipo invalido. Usa: ${VALID_TIPOS.join(', ')}.`;
+    const monto = Number(args.monto);
+    if (!monto || monto <= 0) return `El monto debe ser mayor a 0.`;
+    await pool.query(
+      'INSERT INTO cuenta_corriente (client_json_id, tipo, descripcion, monto, fecha) VALUES ($1, $2, $3, $4, NOW())',
+      [client.id, tipo, args.descripcion || `${tipo} registrado por asistente IA`, monto]
+    );
+    return `Movimiento registrado: ${tipo} de $${monto.toLocaleString('es-AR')} para ${client.businessName}.`;
+  }
   if (functionName === 'get_stock_alerts') {
-    const critical = state.products.filter(p => (p.currentStock ?? 0) < 10);
+    const critical = state.products.filter(p => {
+      const stock = Number(p.currentStock ?? 0);
+      const minimo = Number(p.stockMinimo ?? p.stock_minimo ?? 10);
+      return stock <= minimo;
+    });
     if (critical.length === 0) return "No hay alertas de stock.";
-    return `PRODUCTOS CON STOCK BAJO (<10):\n` + critical.map(p => `- ${p.name}: ${p.currentStock}`).join('\n');
+    return `PRODUCTOS CON STOCK BAJO O CRITICO:\n` + critical.map(p => {
+      const stock = Number(p.currentStock ?? 0);
+      const minimo = Number(p.stockMinimo ?? p.stock_minimo ?? 10);
+      return `- ${p.name} (SKU ${p.sku}): stock actual ${stock} | minimo ${minimo} | deficit ${Math.max(minimo - stock, 0)}`;
+    }).join('\n');
   }
   if (functionName === 'get_inactive_clients') {
     const requestedDays = Math.max(Number(args?.days_without_purchase) || 30, 1);
