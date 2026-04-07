@@ -24,6 +24,7 @@ const adminSections = [
   { id: 'ia', label: 'IA' },
   { id: 'pedidos', label: 'Pedidos Entrantes' },
   { id: 'stock', label: 'Control de Stock' },
+  { id: 'facturacion', label: 'Facturación' },
   { id: 'fidelizacion', label: 'Sistema de Puntos/Niveles' },
   { id: 'configuracion', label: 'Configuracion' },
 ]
@@ -34,7 +35,7 @@ const adminSectionGroups = [
   },
   {
     title: 'Operaciones',
-    items: ['pedidos', 'stock'],
+    items: ['pedidos', 'stock', 'facturacion'],
   },
   {
     title: 'Sistema',
@@ -92,6 +93,12 @@ function AdminSidebarIcon({ sectionId }) {
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="m12 4 2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 9.2l5-.7z" />
+        </svg>
+      )
+    case 'facturacion':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 2h12v20H6zM9 6h6M9 10h6M9 14h4" />
         </svg>
       )
     case 'configuracion':
@@ -257,6 +264,106 @@ function getTierClass(tier) {
 
 function getClientLifetimePoints(client) {
   return Number(client?.lifetime_points ?? client?.points ?? 0)
+}
+
+function getAuthToken() {
+  try {
+    const session = JSON.parse(localStorage.getItem('amp-reventa-session') || '{}')
+    return session.token || null
+  } catch {
+    return null
+  }
+}
+
+function FacturacionSection({ facturas, loading, loaded, filtroEstado, onFiltroEstadoChange, clients, onLoad, onAnular, onCreateFromOrder }) {
+  useEffect(() => { onLoad() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filtered = facturas.filter((f) => filtroEstado === 'todos' || f.estado === filtroEstado)
+  const getClientName = (clientId) => clients.find((c) => c.id === clientId)?.businessName ?? `Cliente #${clientId}`
+
+  const handlePrintFactura = (factura) => {
+    const clientName = getClientName(factura.client_json_id)
+    const items = Array.isArray(factura.items) ? factura.items : []
+    const win = window.open('', '_blank', 'width=700,height=900')
+    if (!win) return
+    win.document.write(`<!DOCTYPE html><html><head><title>Factura ${factura.tipo}${String(factura.numero).padStart(8, '0')}</title>
+    <style>body{font-family:Arial,sans-serif;padding:2rem;color:#111}h1{font-size:1.5rem}table{width:100%;border-collapse:collapse;margin-top:1rem}th,td{border:1px solid #ccc;padding:0.5rem;text-align:left}th{background:#f5f5f5}.total{text-align:right;font-weight:bold;margin-top:1rem}.watermark{color:#aaa;font-size:0.75rem;margin-top:2rem;border-top:1px solid #eee;padding-top:1rem}</style>
+    </head><body>
+    <h1>Factura ${factura.tipo}${String(factura.numero).padStart(8, '0')}</h1>
+    <p><strong>Fecha:</strong> ${new Date(factura.fecha).toLocaleDateString('es-AR')}</p>
+    <p><strong>Cliente:</strong> ${clientName}</p>
+    <p><strong>Estado:</strong> ${factura.estado}</p>
+    <table><thead><tr><th>Producto</th><th>SKU</th><th>Cant.</th><th>Precio unit.</th><th>Total</th></tr></thead><tbody>
+    ${items.map((item) => `<tr><td>${item.name || ''}</td><td>${item.sku || ''}</td><td>${item.qty || ''}</td><td>$${(item.unitPrice || 0).toLocaleString('es-AR')}</td><td>$${(item.totalValue || 0).toLocaleString('es-AR')}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="total"><p>Subtotal: $${(factura.subtotal || 0).toLocaleString('es-AR')}</p><p>IVA: $${(factura.iva || 0).toLocaleString('es-AR')}</p><p>Total: $${(factura.total || 0).toLocaleString('es-AR')}</p></div>
+    <div class="watermark">Documento interno — no válido como comprobante fiscal</div>
+    </body></html>`)
+    win.document.close()
+    win.print()
+  }
+
+  return (
+    <div>
+      <div className="admin-section-header admin-orders-header">
+        <div className="admin-orders-filters">
+          <label className="admin-status-filter">
+            <select value={filtroEstado} onChange={(e) => onFiltroEstadoChange(e.target.value)}>
+              <option value="todos">Todos los estados</option>
+              <option value="emitida">Emitidas</option>
+              <option value="anulada">Anuladas</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="admin-card">
+        {loading ? (
+          <div className="admin-empty-inline" style={{ padding: '2rem' }}>Cargando facturas...</div>
+        ) : (
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1fr 1fr 1fr 1fr', gap: '0.5rem', padding: '0.5rem 1rem' }}>
+              <span>N° Factura</span>
+              <span>Tipo</span>
+              <span>Cliente</span>
+              <span>Pedido</span>
+              <span>Total</span>
+              <span>Estado</span>
+              <span>Acciones</span>
+            </div>
+            {filtered.length > 0 ? filtered.map((f) => (
+              <div key={f.id} className="admin-table-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1fr 1fr 1fr 1fr', gap: '0.5rem', padding: '0.5rem 1rem', alignItems: 'center' }}>
+                <strong>{f.tipo}{String(f.numero).padStart(8, '0')}</strong>
+                <span className="admin-status-badge pendiente">{f.tipo}</span>
+                <span>{getClientName(f.client_json_id)}</span>
+                <span>{f.pedido_json_id || '—'}</span>
+                <strong>{formatCurrency(f.total)}</strong>
+                <span className={`admin-status-badge ${f.estado === 'emitida' ? 'aprobado' : 'cancelado'}`}>{f.estado}</span>
+                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                  <button type="button" className="admin-action-btn neutral" onClick={() => handlePrintFactura(f)}>
+                    Ver PDF
+                  </button>
+                  {f.estado === 'emitida' ? (
+                    <button
+                      type="button"
+                      className="admin-action-btn cancel"
+                      onClick={() => window.confirm('¿Anular esta factura?') && onAnular(f.id)}
+                    >
+                      Anular
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )) : (
+              <div className="admin-empty-inline" style={{ padding: '2rem' }}>
+                {loaded ? 'No hay facturas que coincidan con el filtro.' : 'Sin facturas emitidas aún.'}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function getOrderStatusClass(status) {
@@ -922,9 +1029,69 @@ function ClientDetailModal({
   onClose,
   onAddActivity,
   onDelete,
+  session,
 }) {
+  const [activeTab, setActiveTab] = useState('info')
   const [activityType, setActivityType] = useState('Llamada')
   const [activityDescription, setActivityDescription] = useState('')
+  const [ccMovimientos, setCcMovimientos] = useState([])
+  const [ccSaldo, setCcSaldo] = useState(0)
+  const [ccLoading, setCcLoading] = useState(false)
+  const [ccForm, setCcForm] = useState({ tipo: 'pago', descripcion: '', monto: '' })
+  const [ccSaving, setCcSaving] = useState(false)
+
+  useEffect(() => {
+    if (activeTab === 'cc' && client) {
+      setCcLoading(true)
+      const token = localStorage.getItem('amp-reventa-session')
+        ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
+        : null
+      fetch(`/api/admin/cuenta-corriente/${client.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.ok) {
+            setCcMovimientos(data.movimientos)
+            setCcSaldo(data.saldo)
+          }
+        })
+        .catch(() => {})
+        .finally(() => setCcLoading(false))
+    }
+  }, [activeTab, client])
+
+  const handleCcSave = () => {
+    if (!ccForm.monto || isNaN(parseFloat(ccForm.monto))) return
+    setCcSaving(true)
+    const token = localStorage.getItem('amp-reventa-session')
+      ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
+      : null
+    // Para pago: monto negativo (reduce deuda). Para factura/ajuste: positivo.
+    const montoFinal = ccForm.tipo === 'pago' || ccForm.tipo === 'nota_credito'
+      ? -Math.abs(parseFloat(ccForm.monto))
+      : Math.abs(parseFloat(ccForm.monto))
+    fetch('/api/admin/cuenta-corriente', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        client_json_id: client.id,
+        tipo: ccForm.tipo,
+        descripcion: ccForm.descripcion,
+        monto: montoFinal,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) {
+          setCcMovimientos((prev) => [data.movimiento, ...prev])
+          setCcSaldo((prev) => prev + parseFloat(data.movimiento.monto))
+          setCcForm({ tipo: 'pago', descripcion: '', monto: '' })
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCcSaving(false))
+  }
 
   if (!client) {
     return null
@@ -941,6 +1108,8 @@ function ClientDetailModal({
     pendingBalance: 0,
     specialDiscount: 0,
     paymentTerms: 'Contado',
+    condicionIva: 'Monotributista',
+    etiquetas: [],
     ...client,
   }
   const safeClientOrders = Array.isArray(clientOrders) ? clientOrders : []
@@ -950,6 +1119,14 @@ function ClientDetailModal({
   const daysWithoutBuying = safeClient.lastPurchase
     ? Math.floor((Date.now() - new Date(safeClient.lastPurchase.createdAt).getTime()) / (1000 * 60 * 60 * 24))
     : null
+  const creditDisponible = Math.max((Number(safeClient.creditLimit) || 0) - (Number(safeClient.pendingBalance) || 0), 0)
+
+  const CLIENT_DETAIL_TABS = [
+    { id: 'info', label: 'Información' },
+    { id: 'pedidos', label: 'Pedidos' },
+    { id: 'cc', label: 'Cuenta corriente' },
+    { id: 'puntos', label: 'Puntos' },
+  ]
 
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
@@ -992,217 +1169,363 @@ function ClientDetailModal({
           </div>
         </div>
 
-        <div className="admin-client-recap-banner">
-          <strong>Resumen comercial</strong>
-          <span>
-            {daysWithoutBuying !== null
-              ? `${safeClient.businessName} lleva ${daysWithoutBuying} dias desde su ultima compra.`
-              : `${safeClient.businessName} aun no tiene compras registradas.`}
-          </span>
-          <div className="admin-client-recap-tags">
-            {safeClient.pendingBalance > 0 ? <span>Saldo pendiente</span> : null}
-            {daysWithoutBuying !== null && daysWithoutBuying > 60 ? <span>En riesgo</span> : null}
-            {loyalty.nextTier ? (
-              <span>{`A ${loyalty.pointsToNext.toLocaleString('es-AR')} pts de ${loyalty.nextTier.name}`}</span>
-            ) : (
-              <span>Nivel maximo</span>
-            )}
-          </div>
+        {/* Tabs de navegación */}
+        <div className="admin-client-tabs">
+          {CLIENT_DETAIL_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={activeTab === tab.id ? 'admin-client-tab active' : 'admin-client-tab'}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        <div className="admin-client-modal-grid">
-          <section className="admin-modal-section">
-            <h4>Datos generales</h4>
-            <div className="admin-client-info-grid">
-              <div><span>Nombre / Razon Social</span><strong>{safeClient.businessName}</strong></div>
-              <div><span>CUIT / DNI</span><strong>{safeClient.taxId}</strong></div>
-              <div><span>Telefono principal</span><strong>{safeClient.phone}</strong></div>
-              <div><span>Telefono alternativo</span><strong>{safeClient.altPhone || 'Sin dato'}</strong></div>
-              <div><span>Email</span><strong>{safeClient.email}</strong></div>
-              <div><span>Direccion</span><strong>{safeClient.address}</strong></div>
-              <div><span>Ciudad</span><strong>{safeClient.city}</strong></div>
-              <div><span>Provincia</span><strong>{safeClient.province}</strong></div>
-              <div><span>Tipo de cliente</span><strong>{safeClient.category}</strong></div>
-              <div><span>Estado</span><strong>{safeClient.status}</strong></div>
-              <div><span>Fecha de alta</span><strong>{formatDate(safeClient.createdAt)}</strong></div>
-            </div>
-            <div className="admin-client-notes-box">
-              <span>Notas internas</span>
-              <p>{safeClient.note || 'Sin notas internas.'}</p>
-            </div>
-          </section>
-
-          <section className="admin-modal-section">
-            <h4>Datos comerciales</h4>
-            <div className="admin-client-info-grid">
-              <div><span>Nivel actual</span><strong>{safeClient.tier}</strong></div>
-              <div><span>Puntos acumulados</span><strong>{getClientLifetimePoints(safeClient).toLocaleString('es-AR')} pts</strong></div>
-              <div><span>Limite de credito</span><strong>{formatCurrency(Number(safeClient.creditLimit) || 0)}</strong></div>
-              <div><span>Saldo pendiente</span><strong>{formatCurrency(Number(safeClient.pendingBalance) || 0)}</strong></div>
-              <div><span>Condicion de pago</span><strong>{safeClient.paymentTerms}</strong></div>
-              <div><span>Descuento especial</span><strong>{Number(safeClient.specialDiscount) || 0}%</strong></div>
-              <div><span>Lista de precios</span><strong>{safeClient.priceList}</strong></div>
-              <div><span>Sucursal habitual</span><strong>{safeClient.preferredBranch || 'Sin asignar'}</strong></div>
-              <div><span>Credito disponible</span><strong>{formatCurrency(Math.max((Number(safeClient.creditLimit) || 0) - (Number(safeClient.pendingBalance) || 0), 0))}</strong></div>
-              <div>
-                <span>Proximo nivel</span>
-                <strong>
-                  {loyalty.nextTier
-                    ? `${loyalty.pointsToNext.toLocaleString('es-AR')} pts para ${loyalty.nextTier.name}`
-                    : 'Nivel maximo alcanzado'}
-                </strong>
+        {/* TAB: INFORMACIÓN */}
+        {activeTab === 'info' ? (
+          <div>
+            <div className="admin-client-recap-banner">
+              <strong>Resumen comercial</strong>
+              <span>
+                {daysWithoutBuying !== null
+                  ? `${safeClient.businessName} lleva ${daysWithoutBuying} dias desde su ultima compra.`
+                  : `${safeClient.businessName} aun no tiene compras registradas.`}
+              </span>
+              <div className="admin-client-recap-tags">
+                {safeClient.pendingBalance > 0 ? <span>Saldo pendiente</span> : null}
+                {daysWithoutBuying !== null && daysWithoutBuying > 60 ? <span>En riesgo</span> : null}
+                {loyalty.nextTier ? (
+                  <span>{`A ${loyalty.pointsToNext.toLocaleString('es-AR')} pts de ${loyalty.nextTier.name}`}</span>
+                ) : (
+                  <span>Nivel maximo</span>
+                )}
               </div>
             </div>
-          </section>
-        </div>
 
-        <section className="admin-modal-section">
-          <h4>Historial de pedidos del cliente</h4>
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head admin-client-orders-grid">
-              <span>N° Pedido</span>
-              <span>Fecha</span>
-              <span>Total</span>
-              <span>Estado</span>
-              <span>Accion</span>
+            <div className="admin-client-modal-grid">
+              <section className="admin-modal-section">
+                <h4>Datos generales</h4>
+                <div className="admin-client-info-grid">
+                  <div><span>Nombre / Razon Social</span><strong>{safeClient.businessName}</strong></div>
+                  <div><span>CUIT / DNI</span><strong>{safeClient.taxId}</strong></div>
+                  <div><span>Condicion IVA</span><strong>{safeClient.condicionIva || 'Monotributista'}</strong></div>
+                  <div><span>Telefono principal</span><strong>{safeClient.phone}</strong></div>
+                  <div><span>Telefono alternativo</span><strong>{safeClient.altPhone || 'Sin dato'}</strong></div>
+                  <div><span>Email</span><strong>{safeClient.email}</strong></div>
+                  <div><span>Direccion</span><strong>{safeClient.address}</strong></div>
+                  <div><span>Ciudad</span><strong>{safeClient.city}</strong></div>
+                  <div><span>Provincia</span><strong>{safeClient.province}</strong></div>
+                  <div><span>Tipo de cliente</span><strong>{safeClient.category}</strong></div>
+                  <div><span>Estado</span><strong>{safeClient.status}</strong></div>
+                  <div><span>Fecha de alta</span><strong>{formatDate(safeClient.createdAt)}</strong></div>
+                </div>
+                {safeClient.etiquetas && safeClient.etiquetas.length > 0 ? (
+                  <div className="admin-client-notes-box">
+                    <span>Segmentos / Etiquetas</span>
+                    <div className="admin-client-docs-tags">
+                      {safeClient.etiquetas.map((tag) => <span key={tag}>{tag}</span>)}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="admin-client-notes-box">
+                  <span>Notas internas</span>
+                  <p>{safeClient.note || 'Sin notas internas.'}</p>
+                </div>
+              </section>
+
+              <section className="admin-modal-section">
+                <h4>Datos comerciales</h4>
+                <div className="admin-client-info-grid">
+                  <div><span>Nivel actual</span><strong>{safeClient.tier}</strong></div>
+                  <div><span>Puntos acumulados</span><strong>{getClientLifetimePoints(safeClient).toLocaleString('es-AR')} pts</strong></div>
+                  <div><span>Limite de credito</span><strong>{formatCurrency(Number(safeClient.creditLimit) || 0)}</strong></div>
+                  <div><span>Saldo pendiente</span><strong>{formatCurrency(Number(safeClient.pendingBalance) || 0)}</strong></div>
+                  <div><span>Credito disponible</span><strong>{formatCurrency(creditDisponible)}</strong></div>
+                  <div><span>Condicion de pago</span><strong>{safeClient.paymentTerms}</strong></div>
+                  <div><span>Descuento especial</span><strong>{Number(safeClient.specialDiscount) || 0}%</strong></div>
+                  <div><span>Lista de precios</span><strong>{safeClient.priceList}</strong></div>
+                  <div><span>Sucursal habitual</span><strong>{safeClient.preferredBranch || 'Sin asignar'}</strong></div>
+                  <div>
+                    <span>Proximo nivel</span>
+                    <strong>
+                      {loyalty.nextTier
+                        ? `${loyalty.pointsToNext.toLocaleString('es-AR')} pts para ${loyalty.nextTier.name}`
+                        : 'Nivel maximo alcanzado'}
+                    </strong>
+                  </div>
+                </div>
+              </section>
             </div>
-            {safeClientOrders.length > 0 ? safeClientOrders.map((order) => (
-              <div key={order.id} className="admin-table-row admin-client-orders-grid">
-                <strong>{order.id}</strong>
-                <span>{formatDate(order.createdAt)}</span>
-                <strong>{formatCurrency(order.total)}</strong>
-                <span className={`admin-status-badge ${getOrderStatusClass(order.status)}`}>
-                  {order.status}
-                </span>
-                <button type="button" className="admin-table-link" onClick={() => onOpenOrderDetail(order.id)}>
-                  Ver detalle
+
+            <section className="admin-modal-section">
+              <div className="admin-modal-header">
+                <div><h4>Actividad y notas</h4></div>
+              </div>
+              <div className="admin-activity-form">
+                <select value={activityType} onChange={(event) => setActivityType(event.target.value)}>
+                  <option value="Llamada">Llamada</option>
+                  <option value="Reunion">Reunion</option>
+                  <option value="Email">Email</option>
+                  <option value="Nota">Nota</option>
+                </select>
+                <input
+                  type="text"
+                  value={activityDescription}
+                  onChange={(event) => setActivityDescription(event.target.value)}
+                  placeholder="Agregar nueva actividad..."
+                />
+                <button
+                  type="button"
+                  className="admin-primary-btn"
+                  onClick={() => {
+                    if (!activityDescription.trim()) return
+                    onAddActivity({
+                      type: activityType,
+                      date: new Date().toISOString(),
+                      description: activityDescription.trim(),
+                    })
+                    setActivityDescription('')
+                    setActivityType('Llamada')
+                  }}
+                >
+                  Agregar
                 </button>
               </div>
-            )) : <div className="admin-empty-inline">Todavia no hay pedidos registrados para este cliente.</div>}
-          </div>
-        </section>
-
-        <section className="admin-modal-section">
-          <h4>Historial de pagos</h4>
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head admin-payments-grid">
-              <span>Fecha</span>
-              <span>Monto</span>
-              <span>Medio</span>
-              <span>Referencia</span>
-              <span>Registrado por</span>
-            </div>
-            {safeClient.paymentHistory.length > 0 ? safeClient.paymentHistory.map((payment) => (
-              <div key={payment.id} className="admin-table-row admin-payments-grid">
-                <span>{formatDate(payment.date)}</span>
-                <strong>{formatCurrency(payment.amount)}</strong>
-                <span>{payment.method}</span>
-                <span>{payment.reference}</span>
-                <span>{payment.registeredBy}</span>
+              <div className="admin-activity-timeline">
+                {safeClient.activityLog.map((activity) => (
+                  <div key={activity.id} className="admin-activity-item">
+                    <div>
+                      <strong>{activity.type}</strong>
+                      <span>{formatDate(activity.date)} - {activity.user}</span>
+                    </div>
+                    <p>{activity.description}</p>
+                  </div>
+                ))}
               </div>
-            )) : <div className="admin-empty-inline">No hay pagos cargados todavia.</div>}
-          </div>
-        </section>
+            </section>
 
-        <div className="admin-client-modal-grid">
-          <section className="admin-modal-section">
-            <h4>Documentos adjuntos</h4>
-            <div className="admin-client-docs-placeholder">
-              <strong>Espacio preparado para adjuntos</strong>
-              <p>
-                Aca vas a poder ver factura, constancia de CUIT, listas de precios y archivos
-                comerciales del cliente.
-              </p>
-              <div className="admin-client-docs-tags">
-                <span>CUIT</span>
-                <span>Factura</span>
-                <span>Lista de precios</span>
+            <section className="admin-modal-section admin-danger-zone">
+              <div className="admin-danger-copy">
+                <h4>Eliminar cliente</h4>
+                <p>Esta accion elimina la cuenta del CRM.</p>
               </div>
-            </div>
-          </section>
-
-          <section className="admin-modal-section">
-            <h4>Resumen IA futuro</h4>
-            <div className="admin-client-docs-placeholder admin-client-ai-preview">
-              <strong>
-                {daysWithoutBuying !== null
-                  ? `Lleva ${daysWithoutBuying} dias sin comprar`
-                  : 'Todavia no tiene compras registradas'}
-              </strong>
-              <p>
-                A futuro, la IA va a resumir aca el estado comercial del cliente, su frecuencia
-                de compra y la mejor accion sugerida para el equipo.
-              </p>
-            </div>
-          </section>
-        </div>
-
-        <section className="admin-modal-section">
-          <div className="admin-modal-header">
-            <div>
-              <h4>Actividad y notas</h4>
-            </div>
+              <button type="button" className="admin-action-btn cancel" onClick={onDelete}>
+                Eliminar cliente
+              </button>
+            </section>
           </div>
+        ) : null}
 
-          <div className="admin-activity-form">
-            <select value={activityType} onChange={(event) => setActivityType(event.target.value)}>
-              <option value="Llamada">Llamada</option>
-              <option value="Reunion">Reunion</option>
-              <option value="Email">Email</option>
-              <option value="Nota">Nota</option>
-            </select>
-            <input
-              type="text"
-              value={activityDescription}
-              onChange={(event) => setActivityDescription(event.target.value)}
-              placeholder="Agregar nueva actividad..."
-            />
-            <button
-              type="button"
-              className="admin-primary-btn"
-              onClick={() => {
-                if (!activityDescription.trim()) return
-                onAddActivity({
-                  type: activityType,
-                  date: new Date().toISOString(),
-                  description: activityDescription.trim(),
-                })
-                setActivityDescription('')
-                setActivityType('Llamada')
-              }}
-            >
-              Agregar actividad
-            </button>
-          </div>
-
-          <div className="admin-activity-timeline">
-            {safeClient.activityLog.map((activity) => (
-              <div key={activity.id} className="admin-activity-item">
-                <div>
-                  <strong>{activity.type}</strong>
-                  <span>{formatDate(activity.date)} - {activity.user}</span>
+        {/* TAB: PEDIDOS */}
+        {activeTab === 'pedidos' ? (
+          <div>
+            <section className="admin-modal-section">
+              <h4>Historial de pedidos</h4>
+              <div className="admin-table">
+                <div className="admin-table-row admin-table-head admin-client-orders-grid">
+                  <span>N° Pedido</span>
+                  <span>Fecha</span>
+                  <span>Total</span>
+                  <span>Estado</span>
+                  <span>Accion</span>
                 </div>
-                <p>{activity.description}</p>
+                {safeClientOrders.length > 0 ? safeClientOrders.map((order) => (
+                  <div key={order.id} className="admin-table-row admin-client-orders-grid">
+                    <strong>{order.id}</strong>
+                    <span>{formatDate(order.createdAt)}</span>
+                    <strong>{formatCurrency(order.total)}</strong>
+                    <span className={`admin-status-badge ${getOrderStatusClass(order.status)}`}>
+                      {order.status}
+                    </span>
+                    <button type="button" className="admin-table-link" onClick={() => onOpenOrderDetail(order.id)}>
+                      Ver detalle
+                    </button>
+                  </div>
+                )) : <div className="admin-empty-inline">Todavia no hay pedidos registrados para este cliente.</div>}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
 
-        <section className="admin-modal-section admin-danger-zone">
-          <div className="admin-danger-copy">
-            <h4>Eliminar cliente</h4>
-            <p>
-              Esta accion elimina la cuenta del CRM y la saca de la tabla principal.
-            </p>
+            <section className="admin-modal-section">
+              <h4>Historial de pagos</h4>
+              <div className="admin-table">
+                <div className="admin-table-row admin-table-head admin-payments-grid">
+                  <span>Fecha</span>
+                  <span>Monto</span>
+                  <span>Medio</span>
+                  <span>Referencia</span>
+                  <span>Registrado por</span>
+                </div>
+                {safeClient.paymentHistory.length > 0 ? safeClient.paymentHistory.map((payment) => (
+                  <div key={payment.id} className="admin-table-row admin-payments-grid">
+                    <span>{formatDate(payment.date)}</span>
+                    <strong>{formatCurrency(payment.amount)}</strong>
+                    <span>{payment.method}</span>
+                    <span>{payment.reference}</span>
+                    <span>{payment.registeredBy}</span>
+                  </div>
+                )) : <div className="admin-empty-inline">No hay pagos cargados todavia.</div>}
+              </div>
+            </section>
           </div>
-          <button
-            type="button"
-            className="admin-action-btn cancel"
-            onClick={onDelete}
-          >
-            Eliminar cliente
-          </button>
-        </section>
+        ) : null}
+
+        {/* TAB: CUENTA CORRIENTE */}
+        {activeTab === 'cc' ? (
+          <div>
+            <div className="admin-client-profile-summary" style={{ marginBottom: '1rem' }}>
+              <div className="admin-client-profile-pill">
+                <span>Saldo CC</span>
+                <strong style={{ color: ccSaldo > 0 ? '#e53e3e' : '#38a169' }}>
+                  {formatCurrency(Math.abs(ccSaldo))} {ccSaldo > 0 ? '(deuda)' : ccSaldo < 0 ? '(a favor)' : ''}
+                </strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Limite de credito</span>
+                <strong>{formatCurrency(Number(safeClient.creditLimit) || 0)}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Credito disponible</span>
+                <strong>{formatCurrency(creditDisponible)}</strong>
+              </div>
+            </div>
+
+            <section className="admin-modal-section">
+              <h4>Registrar movimiento</h4>
+              <div className="admin-activity-form">
+                <select value={ccForm.tipo} onChange={(e) => setCcForm((f) => ({ ...f, tipo: e.target.value }))}>
+                  <option value="pago">Pago recibido</option>
+                  <option value="factura">Factura emitida</option>
+                  <option value="nota_credito">Nota de crédito</option>
+                  <option value="ajuste">Ajuste</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Descripción (opcional)"
+                  value={ccForm.descripcion}
+                  onChange={(e) => setCcForm((f) => ({ ...f, descripcion: e.target.value }))}
+                />
+                <input
+                  type="number"
+                  placeholder="Monto ($)"
+                  value={ccForm.monto}
+                  onChange={(e) => setCcForm((f) => ({ ...f, monto: e.target.value }))}
+                  min="0"
+                  step="0.01"
+                />
+                <button
+                  type="button"
+                  className="admin-primary-btn"
+                  onClick={handleCcSave}
+                  disabled={ccSaving || !ccForm.monto}
+                >
+                  {ccSaving ? 'Guardando...' : 'Registrar'}
+                </button>
+              </div>
+            </section>
+
+            <section className="admin-modal-section">
+              <h4>Movimientos</h4>
+              {ccLoading ? (
+                <div className="admin-empty-inline">Cargando movimientos...</div>
+              ) : (
+                <div className="admin-table">
+                  <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1fr', gap: '0.5rem' }}>
+                    <span>Fecha</span>
+                    <span>Tipo</span>
+                    <span>Descripción</span>
+                    <span>Monto</span>
+                  </div>
+                  {ccMovimientos.length > 0 ? ccMovimientos.map((mov) => (
+                    <div key={mov.id} className="admin-table-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1fr', gap: '0.5rem' }}>
+                      <span>{formatDate(mov.fecha)}</span>
+                      <span className={`admin-status-badge ${mov.tipo === 'pago' || mov.tipo === 'nota_credito' ? 'aprobado' : 'pendiente'}`}>
+                        {mov.tipo}
+                      </span>
+                      <span>{mov.descripcion || '—'}</span>
+                      <strong style={{ color: parseFloat(mov.monto) < 0 ? '#38a169' : '#e53e3e' }}>
+                        {parseFloat(mov.monto) < 0 ? '-' : '+'}{formatCurrency(Math.abs(parseFloat(mov.monto)))}
+                      </strong>
+                    </div>
+                  )) : <div className="admin-empty-inline">Sin movimientos registrados.</div>}
+                </div>
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {/* TAB: PUNTOS */}
+        {activeTab === 'puntos' ? (
+          <div>
+            <div className="admin-client-profile-summary" style={{ marginBottom: '1rem' }}>
+              <div className="admin-client-profile-pill">
+                <span>Puntos acumulados</span>
+                <strong>{getClientLifetimePoints(safeClient).toLocaleString('es-AR')}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Puntos disponibles</span>
+                <strong>{(Number(safeClient.available_points) || 0).toLocaleString('es-AR')}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Nivel actual</span>
+                <strong>{safeClient.tier}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Proximo nivel</span>
+                <strong>{loyalty.nextTier ? loyalty.nextTier.name : 'Nivel máximo'}</strong>
+              </div>
+            </div>
+
+            <section className="admin-modal-section">
+              <h4>Progreso hacia el siguiente nivel</h4>
+              {loyalty.nextTier ? (
+                <div style={{ padding: '1rem 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                    <span>{safeClient.tier}</span>
+                    <span>{loyalty.nextTier.name}</span>
+                  </div>
+                  <div style={{ background: '#e2e8f0', borderRadius: '9999px', height: '8px', overflow: 'hidden' }}>
+                    <div style={{
+                      background: '#3b82f6',
+                      height: '100%',
+                      borderRadius: '9999px',
+                      width: `${Math.min(100, 100 - (loyalty.pointsToNext / (loyalty.nextTier.threshold - (loyalty.currentTier?.threshold ?? 0))) * 100)}%`,
+                      transition: 'width 0.3s ease',
+                    }} />
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
+                    Faltan {loyalty.pointsToNext.toLocaleString('es-AR')} pts para llegar a {loyalty.nextTier.name}
+                  </p>
+                </div>
+              ) : (
+                <p style={{ color: '#38a169', fontWeight: '600' }}>Nivel máximo alcanzado</p>
+              )}
+            </section>
+
+            <section className="admin-modal-section">
+              <h4>Historial de pedidos con puntos</h4>
+              <div className="admin-table">
+                <div className="admin-table-row admin-table-head admin-client-orders-grid">
+                  <span>N° Pedido</span>
+                  <span>Fecha</span>
+                  <span>Total</span>
+                  <span>Puntos otorgados</span>
+                  <span>Estado</span>
+                </div>
+                {safeClientOrders.length > 0 ? safeClientOrders.map((order) => (
+                  <div key={order.id} className="admin-table-row admin-client-orders-grid">
+                    <strong>{order.id}</strong>
+                    <span>{formatDate(order.createdAt)}</span>
+                    <strong>{formatCurrency(order.total)}</strong>
+                    <span>+{calculatePointsFromTotal(order.total)} pts</span>
+                    <span className={`admin-status-badge ${getOrderStatusClass(order.status)}`}>{order.status}</span>
+                  </div>
+                )) : <div className="admin-empty-inline">Sin pedidos para calcular puntos.</div>}
+              </div>
+            </section>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -1767,6 +2090,118 @@ function ClientAiModal({ client, clientOrders, products, onClose }) {
   )
 }
 
+function StockAdjustModal({ product, onClose, onAdjust }) {
+  const [tipo, setTipo] = useState('ingreso')
+  const [cantidad, setCantidad] = useState('')
+  const [motivo, setMotivo] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  if (!product) return null
+
+  const handleSubmit = () => {
+    const n = parseInt(cantidad, 10)
+    if (!n || n <= 0) return
+    setSaving(true)
+    const delta = tipo === 'egreso' ? -n : n
+    onAdjust(product, delta, motivo.trim(), tipo)
+    setSaving(false)
+    onClose()
+  }
+
+  const stockMinimo = Number(product.stockMinimo) || 5
+  const stockReservado = Number(product.stockReservado) || 0
+  const stockDisponible = Math.max((Number(product.currentStock) || 0) - stockReservado, 0)
+  const isLow = stockDisponible < stockMinimo
+
+  return (
+    <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="admin-modal-card"
+        style={{ maxWidth: '480px' }}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="admin-modal-header">
+          <div>
+            <span className="admin-card-eyebrow">Control de stock</span>
+            <h3>{product.name}</h3>
+            <p className="admin-modal-copy">SKU: {product.sku}</p>
+          </div>
+          <button type="button" className="admin-modal-close" onClick={onClose}>Cerrar</button>
+        </div>
+
+        <div className="admin-client-profile-summary" style={{ marginBottom: '1rem' }}>
+          <div className="admin-client-profile-pill">
+            <span>Stock actual</span>
+            <strong>{product.currentStock ?? 0}</strong>
+          </div>
+          <div className="admin-client-profile-pill">
+            <span>Reservado</span>
+            <strong>{stockReservado}</strong>
+          </div>
+          <div className="admin-client-profile-pill">
+            <span>Disponible</span>
+            <strong style={{ color: isLow ? '#e53e3e' : undefined }}>{stockDisponible}</strong>
+          </div>
+          <div className="admin-client-profile-pill">
+            <span>Mínimo</span>
+            <strong>{stockMinimo}</strong>
+          </div>
+        </div>
+
+        {isLow ? (
+          <div className="admin-alert-row rich warning" style={{ marginBottom: '1rem' }}>
+            <span className="admin-alert-icon">⚠️</span>
+            <strong>Stock disponible por debajo del mínimo configurado</strong>
+          </div>
+        ) : null}
+
+        <section className="admin-modal-section">
+          <h4>Registrar movimiento</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <label className="admin-form-field">
+              <span>Tipo de movimiento</span>
+              <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                <option value="ingreso">Ingreso de mercadería</option>
+                <option value="egreso">Egreso / Ajuste negativo</option>
+                <option value="ajuste">Ajuste de inventario</option>
+              </select>
+            </label>
+            <label className="admin-form-field">
+              <span>Cantidad</span>
+              <input
+                type="number"
+                min="1"
+                value={cantidad}
+                onChange={(e) => setCantidad(e.target.value)}
+                placeholder="Ej: 50"
+              />
+            </label>
+            <label className="admin-form-field">
+              <span>Motivo (opcional)</span>
+              <input
+                type="text"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ej: Compra a proveedor, ajuste de inventario..."
+              />
+            </label>
+            <button
+              type="button"
+              className="admin-primary-btn"
+              onClick={handleSubmit}
+              disabled={saving || !cantidad || parseInt(cantidad, 10) <= 0}
+            >
+              {saving ? 'Guardando...' : 'Confirmar movimiento'}
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
 function ProductImportModal({ isOpen, onClose, existingProducts, onImport }) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [selectedFileName, setSelectedFileName] = useState('')
@@ -2171,6 +2606,8 @@ export function AdminDashboard() {
     saveClient,
     addClientActivity,
     updateProductStock,
+    updateProductStockMinimo,
+    adjustProductStock,
     deleteProduct,
     importProducts,
     updateTierThreshold,
@@ -2209,6 +2646,19 @@ export function AdminDashboard() {
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false)
   const [auditPage, setAuditPage] = useState(1)
   const [isProductImportOpen, setIsProductImportOpen] = useState(false)
+  const [stockAdjustProduct, setStockAdjustProduct] = useState(null)
+  const [stockOnlyAlerts, setStockOnlyAlerts] = useState(false)
+  const [stockMovHistory, setStockMovHistory] = useState({ productId: null, movimientos: [], loading: false })
+  const [facturas, setFacturas] = useState([])
+  const [facturasLoading, setFacturasLoading] = useState(false)
+  const [facturasLoaded, setFacturasLoaded] = useState(false)
+  const [facturaFiltroEstado, setFacturaFiltroEstado] = useState('todos')
+  const [usuariosAdmin, setUsuariosAdmin] = useState([])
+  const [usuariosLoaded, setUsuariosLoaded] = useState(false)
+  const [listasPreciosData, setListasPreciosData] = useState([])
+  const [listasPreciosLoaded, setListasPreciosLoaded] = useState(false)
+  const [editingListaPrecio, setEditingListaPrecio] = useState(null)
+  const [newListaForm, setNewListaForm] = useState({ nombre: '', descripcion: '' })
   const [selectedChatClientId, setSelectedChatClientId] = useState(null)
   const [adminChatDraft, setAdminChatDraft] = useState('')
   const [adminChatOrderReferenceId, setAdminChatOrderReferenceId] = useState('')
@@ -4037,6 +4487,16 @@ export function AdminDashboard() {
                   />
                 </label>
 
+                <label className="admin-status-filter">
+                  <select
+                    value={stockOnlyAlerts ? 'alertas' : 'todos'}
+                    onChange={(e) => setStockOnlyAlerts(e.target.value === 'alertas')}
+                  >
+                    <option value="todos">Todos los productos</option>
+                    <option value="alertas">Solo alertas de stock</option>
+                  </select>
+                </label>
+
                 <button
                   type="button"
                   className="admin-primary-btn"
@@ -4046,6 +4506,20 @@ export function AdminDashboard() {
                 </button>
               </div>
             </div>
+
+            {(() => {
+              const stockAlertCount = filteredStockProducts.filter((p) => {
+                const minimo = Number(p.stockMinimo) || 5
+                const reservado = Number(p.stockReservado) || 0
+                return Math.max((Number(p.currentStock) || 0) - reservado, 0) < minimo
+              }).length
+              return stockAlertCount > 0 ? (
+                <div className="admin-alert-row rich warning" style={{ marginBottom: '1rem' }}>
+                  <span className="admin-alert-icon">⚠️</span>
+                  <strong>{stockAlertCount} producto{stockAlertCount > 1 ? 's' : ''} con stock disponible por debajo del mínimo</strong>
+                </div>
+              ) : null
+            })()}
 
             <div className="admin-card admin-stock-card">
               <div className="admin-stock-meta">
@@ -4058,45 +4532,82 @@ export function AdminDashboard() {
               </div>
 
               <div className="admin-table admin-stock-table-scroll">
-                <div className="admin-table-row admin-table-head admin-stock-grid">
-                  <span>Producto</span>
-                  <span>SKU</span>
-                  <span>Stock actual</span>
+                <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr', gap: '0.5rem', padding: '0.5rem 1rem' }}>
+                  <span>Producto / SKU</span>
+                  <span>Actual</span>
+                  <span>Reservado</span>
+                  <span>Disponible</span>
+                  <span>Mínimo</span>
                   <span>Estado</span>
                   <span>Acciones</span>
                 </div>
 
-                {visibleStockProducts.map((product) => (
-                  <div key={product.id} className="admin-table-row admin-stock-grid">
-                    <strong>{product.name}</strong>
-                    <span>{product.sku}</span>
-                    <EditableNumberField
-                      value={product.currentStock}
-                      onCommit={(nextValue) =>
-                        updateProductStock(product.id, nextValue, session.name)
-                      }
-                      suffix="uni"
-                    />
-                    <span className={product.currentStock < 5 ? 'admin-stock-critical' : undefined}>
-                      {product.currentStock < 5 ? 'Critico' : 'Normal'}
-                    </span>
-                    <div className="admin-stock-actions">
-                      <button
-                        type="button"
-                        className="admin-action-btn cancel"
-                        onClick={() => handleDeleteProduct(product)}
-                        disabled={productIdsInOrders.has(product.id)}
-                        title={
-                          productIdsInOrders.has(product.id)
-                            ? 'No se puede eliminar porque ya forma parte de pedidos cargados.'
-                            : 'Eliminar producto'
+                {(stockOnlyAlerts
+                  ? visibleStockProducts.filter((p) => {
+                      const minimo = Number(p.stockMinimo) || 5
+                      const reservado = Number(p.stockReservado) || 0
+                      return Math.max((Number(p.currentStock) || 0) - reservado, 0) < minimo
+                    })
+                  : visibleStockProducts
+                ).map((product) => {
+                  const stockMinimo = Number(product.stockMinimo) || 5
+                  const stockReservado = Number(product.stockReservado) || 0
+                  const stockDisponible = Math.max((Number(product.currentStock) || 0) - stockReservado, 0)
+                  const isLow = stockDisponible < stockMinimo
+                  const isCritical = stockDisponible < Math.ceil(stockMinimo / 2)
+                  return (
+                    <div key={product.id} className={`admin-table-row${isLow ? ' alert' : ''}`} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr', gap: '0.5rem', padding: '0.5rem 1rem', alignItems: 'center' }}>
+                      <div>
+                        <strong>{product.name}</strong>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{product.sku}</div>
+                      </div>
+                      <EditableNumberField
+                        value={product.currentStock}
+                        onCommit={(nextValue) =>
+                          updateProductStock(product.id, nextValue, session.name)
                         }
-                      >
-                        Eliminar
-                      </button>
+                        suffix="uni"
+                      />
+                      <span style={{ color: '#64748b' }}>{stockReservado}</span>
+                      <strong style={{ color: isCritical ? '#e53e3e' : isLow ? '#d97706' : undefined }}>
+                        {stockDisponible}
+                      </strong>
+                      <EditableNumberField
+                        value={stockMinimo}
+                        onCommit={(nextValue) =>
+                          updateProductStockMinimo(product.id, nextValue, session.name)
+                        }
+                        suffix="uni"
+                      />
+                      <span className={isCritical ? 'admin-stock-critical' : isLow ? 'admin-stock-critical' : undefined} style={{ fontSize: '0.75rem' }}>
+                        {isCritical ? 'Crítico' : isLow ? 'Bajo' : 'Normal'}
+                      </span>
+                      <div className="admin-stock-actions">
+                        <button
+                          type="button"
+                          className="admin-action-btn neutral"
+                          onClick={() => setStockAdjustProduct(product)}
+                          title="Registrar movimiento de stock"
+                        >
+                          Ajustar
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-action-btn cancel"
+                          onClick={() => handleDeleteProduct(product)}
+                          disabled={productIdsInOrders.has(product.id)}
+                          title={
+                            productIdsInOrders.has(product.id)
+                              ? 'No se puede eliminar porque ya forma parte de pedidos cargados.'
+                              : 'Eliminar producto'
+                          }
+                        >
+                          Eliminar
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
 
                 {visibleStockProducts.length === 0 ? (
                   <div className="admin-stock-empty">
@@ -4131,6 +4642,69 @@ export function AdminDashboard() {
                 </div>
               ) : null}
             </div>
+            </section>
+          ) : null}
+
+          {activeSection === 'facturacion' ? (
+            <section className="admin-section">
+              <FacturacionSection
+                facturas={facturas}
+                loading={facturasLoading}
+                loaded={facturasLoaded}
+                filtroEstado={facturaFiltroEstado}
+                onFiltroEstadoChange={setFacturaFiltroEstado}
+                clients={clientsWithTier}
+                onLoad={() => {
+                  if (facturasLoaded) return
+                  setFacturasLoading(true)
+                  fetch('/api/admin/facturas', { headers: { Authorization: `Bearer ${getAuthToken()}` } })
+                    .then((r) => r.json())
+                    .then((data) => { if (data.ok) { setFacturas(data.facturas); setFacturasLoaded(true) } })
+                    .catch(() => {})
+                    .finally(() => setFacturasLoading(false))
+                }}
+                onAnular={(id) => {
+                  fetch(`/api/admin/facturas/${id}/anular`, {
+                    method: 'PUT',
+                    headers: { Authorization: `Bearer ${getAuthToken()}` },
+                  })
+                    .then((r) => r.json())
+                    .then((data) => {
+                      if (data.ok) setFacturas((prev) => prev.map((f) => f.id === id ? { ...f, estado: 'anulada' } : f))
+                    })
+                    .catch(() => {})
+                }}
+                onCreateFromOrder={(order) => {
+                  const orderData = ordersWithClient.find((o) => o.id === order.id)
+                  const client = orderData?.client ?? null
+                  const items = buildOrderRows(order.items, products)
+                  const tipoFactura = client?.condicionIva === 'Responsable Inscripto' ? 'A' : 'B'
+                  const subtotal = Math.round((order.total / 1.21) * 100) / 100
+                  const iva = order.total - subtotal
+                  fetch('/api/admin/facturas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                    body: JSON.stringify({
+                      tipo: tipoFactura,
+                      client_json_id: order.clientId,
+                      pedido_json_id: order.id,
+                      subtotal,
+                      iva,
+                      total: order.total,
+                      items,
+                      datos_cliente: client ? { businessName: client.businessName, taxId: client.taxId, address: client.address } : null,
+                    }),
+                  })
+                    .then((r) => r.json())
+                    .then((data) => {
+                      if (data.ok) {
+                        setFacturas((prev) => [data.factura, ...prev])
+                        setFacturasLoaded(true)
+                      }
+                    })
+                    .catch(() => {})
+                }}
+              />
             </section>
           ) : null}
 
@@ -4526,6 +5100,213 @@ export function AdminDashboard() {
                   </label>
                 </div>
               </article>
+
+              {/* Módulo 7 — Gestión de Usuarios / Roles */}
+              <article className="admin-card">
+                <h3>Usuarios del sistema</h3>
+                <p className="admin-config-copy">Administrá los usuarios con acceso al panel de administración.</p>
+                <button
+                  type="button"
+                  className="admin-primary-btn"
+                  style={{ marginBottom: '1rem' }}
+                  onClick={() => {
+                    if (usuariosLoaded) return
+                    fetch('/api/admin/usuarios', { headers: { Authorization: `Bearer ${getAuthToken()}` } })
+                      .then((r) => r.json())
+                      .then((data) => { if (data.ok) { setUsuariosAdmin(data.usuarios); setUsuariosLoaded(true) } })
+                      .catch(() => {})
+                  }}
+                >
+                  {usuariosLoaded ? 'Usuarios cargados' : 'Cargar usuarios'}
+                </button>
+
+                {usuariosLoaded ? (
+                  <div className="admin-table">
+                    <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '0.5rem' }}>
+                      <span>Nombre / Email</span>
+                      <span>Rol</span>
+                      <span>Estado</span>
+                      <span>Acciones</span>
+                    </div>
+                    {usuariosAdmin.map((u) => (
+                      <div key={u.id} className="admin-table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                        <div>
+                          <strong>{u.name}</strong>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{u.email}</div>
+                        </div>
+                        <select
+                          value={u.rol || 'admin'}
+                          onChange={(e) => {
+                            fetch(`/api/admin/usuarios/${u.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                              body: JSON.stringify({ rol: e.target.value }),
+                            })
+                              .then((r) => r.json())
+                              .then((data) => {
+                                if (data.ok) setUsuariosAdmin((prev) => prev.map((x) => x.id === u.id ? { ...x, rol: e.target.value } : x))
+                              })
+                              .catch(() => {})
+                          }}
+                        >
+                          <option value="superadmin">Superadmin</option>
+                          <option value="admin">Admin</option>
+                          <option value="vendedor">Vendedor</option>
+                          <option value="deposito">Depósito</option>
+                        </select>
+                        <span className={`admin-status-badge ${u.is_active ? 'aprobado' : 'cancelado'}`}>
+                          {u.is_active ? 'Activo' : 'Inactivo'}
+                        </span>
+                        <button
+                          type="button"
+                          className={`admin-action-btn ${u.is_active ? 'cancel' : 'neutral'}`}
+                          onClick={() => {
+                            fetch(`/api/admin/usuarios/${u.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                              body: JSON.stringify({ is_active: !u.is_active }),
+                            })
+                              .then((r) => r.json())
+                              .then((data) => {
+                                if (data.ok) setUsuariosAdmin((prev) => prev.map((x) => x.id === u.id ? { ...x, is_active: !u.is_active } : x))
+                              })
+                              .catch(() => {})
+                          }}
+                        >
+                          {u.is_active ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+
+              {/* Módulo 2 — Listas de precios */}
+              <article className="admin-card">
+                <h3>Listas de precios</h3>
+                <p className="admin-config-copy">Administrá las listas de precios para asignar a clientes.</p>
+
+                {!listasPreciosLoaded ? (
+                  <button
+                    type="button"
+                    className="admin-primary-btn"
+                    style={{ marginBottom: '1rem' }}
+                    onClick={() => {
+                      fetch('/api/admin/listas-precios', { headers: { Authorization: `Bearer ${getAuthToken()}` } })
+                        .then((r) => r.json())
+                        .then((data) => { if (data.ok) { setListasPreciosData(data.listas); setListasPreciosLoaded(true) } })
+                        .catch(() => {})
+                    }}
+                  >
+                    Cargar listas
+                  </button>
+                ) : null}
+
+                {listasPreciosLoaded ? (
+                  <div>
+                    <div className="admin-activity-form" style={{ marginBottom: '1rem' }}>
+                      <input
+                        type="text"
+                        placeholder="Nombre de la lista"
+                        value={newListaForm.nombre}
+                        onChange={(e) => setNewListaForm((f) => ({ ...f, nombre: e.target.value }))}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Descripción (opcional)"
+                        value={newListaForm.descripcion}
+                        onChange={(e) => setNewListaForm((f) => ({ ...f, descripcion: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="admin-primary-btn"
+                        onClick={() => {
+                          if (!newListaForm.nombre.trim()) return
+                          fetch('/api/admin/listas-precios', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                            body: JSON.stringify({ nombre: newListaForm.nombre, descripcion: newListaForm.descripcion }),
+                          })
+                            .then((r) => r.json())
+                            .then((data) => {
+                              if (data.ok) {
+                                setListasPreciosData((prev) => [...prev, data.lista])
+                                setNewListaForm({ nombre: '', descripcion: '' })
+                              }
+                            })
+                            .catch(() => {})
+                        }}
+                      >
+                        + Agregar lista
+                      </button>
+                    </div>
+
+                    <div className="admin-table">
+                      <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr', gap: '0.5rem' }}>
+                        <span>Nombre</span>
+                        <span>Descripción</span>
+                        <span>Estado</span>
+                        <span>Acciones</span>
+                      </div>
+                      {listasPreciosData.map((lista) => (
+                        <div key={lista.id} className="admin-table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                          {editingListaPrecio === lista.id ? (
+                            <input
+                              type="text"
+                              defaultValue={lista.nombre}
+                              onBlur={(e) => {
+                                fetch(`/api/admin/listas-precios/${lista.id}`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                                  body: JSON.stringify({ nombre: e.target.value }),
+                                })
+                                  .then((r) => r.json())
+                                  .then((data) => {
+                                    if (data.ok) setListasPreciosData((prev) => prev.map((l) => l.id === lista.id ? data.lista : l))
+                                    setEditingListaPrecio(null)
+                                  })
+                                  .catch(() => setEditingListaPrecio(null))
+                              }}
+                            />
+                          ) : (
+                            <strong>{lista.nombre}</strong>
+                          )}
+                          <span>{lista.descripcion || '—'}</span>
+                          <span className={`admin-status-badge ${lista.activa ? 'aprobado' : 'cancelado'}`}>
+                            {lista.activa ? 'Activa' : 'Inactiva'}
+                          </span>
+                          <div style={{ display: 'flex', gap: '0.25rem' }}>
+                            <button type="button" className="admin-action-btn neutral" onClick={() => setEditingListaPrecio(lista.id)}>
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="admin-action-btn cancel"
+                              onClick={() => {
+                                if (!window.confirm(`¿Eliminar la lista "${lista.nombre}"?`)) return
+                                fetch(`/api/admin/listas-precios/${lista.id}`, {
+                                  method: 'DELETE',
+                                  headers: { Authorization: `Bearer ${getAuthToken()}` },
+                                })
+                                  .then((r) => r.json())
+                                  .then((data) => {
+                                    if (data.ok) setListasPreciosData((prev) => prev.filter((l) => l.id !== lista.id))
+                                  })
+                                  .catch(() => {})
+                              }}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {listasPreciosData.length === 0 ? (
+                        <div className="admin-empty-inline">No hay listas de precios configuradas.</div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </article>
             </div>
             </section>
           ) : null}
@@ -4558,6 +5339,7 @@ export function AdminDashboard() {
       <ClientDetailModal
         client={selectedClient}
         clientOrders={selectedClientOrders}
+        session={session}
         onOpenOrderDetail={handleOpenOrderFromClient}
         onAddActivity={(activity) =>
           selectedClient
@@ -4636,6 +5418,29 @@ export function AdminDashboard() {
         products={products}
         onClose={() => setAiClientId(null)}
       />
+
+      {stockAdjustProduct ? (
+        <StockAdjustModal
+          product={stockAdjustProduct}
+          onClose={() => setStockAdjustProduct(null)}
+          onAdjust={(product, delta, motivo, tipo) => {
+            adjustProductStock(product.id, delta, motivo, session.name)
+            const token = localStorage.getItem('amp-reventa-session')
+              ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
+              : null
+            fetch('/api/admin/stock-movimientos', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({
+                producto_json_id: String(product.id),
+                tipo,
+                cantidad: delta,
+                motivo,
+              }),
+            }).catch(() => {})
+          }}
+        />
+      ) : null}
     </main>
   )
 }

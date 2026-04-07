@@ -2080,7 +2080,211 @@ function AccountPage({
           ))}
         </div>
       </article>
+
+      <ClientCuentaCorrienteCard session={session} />
+      <ClientDireccionesCard session={session} />
     </section>
+  )
+}
+
+function ClientCuentaCorrienteCard({ session }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  const loadCC = () => {
+    if (loaded) return
+    setLoading(true)
+    const token = session?.token || null
+    fetch('/api/client/cuenta-corriente', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.ok) { setData(res); setLoaded(true) }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  return (
+    <article className="client-panel-card account-span-two">
+      <div className="client-card-header">
+        <div>
+          <span className="client-card-eyebrow">Finanzas</span>
+          <h2>Cuenta corriente</h2>
+        </div>
+        {!loaded ? (
+          <button type="button" className="client-cta-btn" onClick={loadCC}>
+            Ver estado de cuenta
+          </button>
+        ) : null}
+      </div>
+
+      {loading ? <p style={{ padding: '1rem', color: '#64748b' }}>Cargando...</p> : null}
+
+      {loaded && data ? (
+        <div>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+            <div className="account-kpi-pill">
+              <span>Saldo</span>
+              <strong style={{ color: data.saldo > 0 ? '#e53e3e' : '#38a169' }}>
+                {formatCurrency(Math.abs(data.saldo))} {data.saldo > 0 ? '(deuda)' : data.saldo < 0 ? '(a favor)' : ''}
+              </strong>
+            </div>
+            <div className="account-kpi-pill">
+              <span>Límite de crédito</span>
+              <strong>{formatCurrency(data.creditLimit || 0)}</strong>
+            </div>
+            <div className="account-kpi-pill">
+              <span>Crédito disponible</span>
+              <strong>{formatCurrency(Math.max((data.creditLimit || 0) - (data.pendingBalance || 0), 0))}</strong>
+            </div>
+          </div>
+
+          {data.movimientos.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Fecha</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Tipo</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'left' }}>Descripción</th>
+                    <th style={{ padding: '0.5rem', textAlign: 'right' }}>Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.movimientos.map((mov) => (
+                    <tr key={mov.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '0.5rem' }}>{formatDate(mov.fecha)}</td>
+                      <td style={{ padding: '0.5rem', textTransform: 'capitalize' }}>{mov.tipo}</td>
+                      <td style={{ padding: '0.5rem', color: '#64748b' }}>{mov.descripcion || '—'}</td>
+                      <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: '600', color: parseFloat(mov.monto) < 0 ? '#38a169' : '#e53e3e' }}>
+                        {parseFloat(mov.monto) < 0 ? '-' : '+'}{formatCurrency(Math.abs(parseFloat(mov.monto)))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p style={{ color: '#64748b', fontSize: '0.875rem' }}>No hay movimientos registrados en la cuenta corriente.</p>
+          )}
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
+function ClientDireccionesCard({ session }) {
+  const [direcciones, setDirecciones] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState({ nombre: '', calle: '', ciudad: '', provincia: '', codigo_postal: '', predeterminada: false })
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const token = session?.token || null
+
+  const loadDirecciones = () => {
+    if (loaded) return
+    setLoading(true)
+    fetch('/api/client/direcciones', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((data) => { if (data.ok) { setDirecciones(data.direcciones); setLoaded(true) } })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  const handleSave = () => {
+    if (!form.calle.trim()) return
+    setSaving(true)
+    fetch('/api/client/direcciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(form),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) {
+          setDirecciones((prev) => form.predeterminada
+            ? [data.direccion, ...prev.map((d) => ({ ...d, predeterminada: false }))]
+            : [...prev, data.direccion])
+          setForm({ nombre: '', calle: '', ciudad: '', provincia: '', codigo_postal: '', predeterminada: false })
+          setShowForm(false)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSaving(false))
+  }
+
+  const handleDelete = (id) => {
+    fetch(`/api/client/direcciones/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => { if (data.ok) setDirecciones((prev) => prev.filter((d) => d.id !== id)) })
+      .catch(() => {})
+  }
+
+  return (
+    <article className="client-panel-card account-side-card">
+      <div className="client-card-header">
+        <div>
+          <span className="client-card-eyebrow">Logística</span>
+          <h2>Direcciones de entrega</h2>
+        </div>
+        <button type="button" className="client-cta-btn" onClick={() => { loadDirecciones(); setShowForm(!showForm) }}>
+          {showForm ? 'Cancelar' : '+ Agregar'}
+        </button>
+      </div>
+
+      {!loaded && !loading ? (
+        <button type="button" className="client-secondary-btn" onClick={loadDirecciones} style={{ marginBottom: '1rem' }}>
+          Ver mis direcciones
+        </button>
+      ) : null}
+
+      {loading ? <p style={{ padding: '0.5rem', color: '#64748b' }}>Cargando...</p> : null}
+
+      {showForm ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem', padding: '1rem', background: '#f8fafc', borderRadius: '8px' }}>
+          <input placeholder="Nombre de la dirección (ej: Depósito principal)" value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} style={{ padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '6px' }} />
+          <input placeholder="Calle y número" value={form.calle} onChange={(e) => setForm((f) => ({ ...f, calle: e.target.value }))} style={{ padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '6px' }} />
+          <input placeholder="Ciudad" value={form.ciudad} onChange={(e) => setForm((f) => ({ ...f, ciudad: e.target.value }))} style={{ padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '6px' }} />
+          <input placeholder="Provincia" value={form.provincia} onChange={(e) => setForm((f) => ({ ...f, provincia: e.target.value }))} style={{ padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '6px' }} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
+            <input type="checkbox" checked={form.predeterminada} onChange={(e) => setForm((f) => ({ ...f, predeterminada: e.target.checked }))} />
+            Marcar como predeterminada
+          </label>
+          <button type="button" className="client-cta-btn" onClick={handleSave} disabled={saving || !form.calle.trim()}>
+            {saving ? 'Guardando...' : 'Guardar dirección'}
+          </button>
+        </div>
+      ) : null}
+
+      {loaded ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {direcciones.length > 0 ? direcciones.map((dir) => (
+            <div key={dir.id} style={{ padding: '0.75rem', border: `1px solid ${dir.predeterminada ? '#3b82f6' : '#e2e8f0'}`, borderRadius: '8px', background: dir.predeterminada ? '#eff6ff' : '#fff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  {dir.predeterminada ? <span style={{ fontSize: '0.7rem', background: '#3b82f6', color: '#fff', padding: '2px 6px', borderRadius: '4px', marginBottom: '4px', display: 'inline-block' }}>Predeterminada</span> : null}
+                  <p style={{ fontWeight: '600', margin: '0 0 2px' }}>{dir.nombre || 'Sin nombre'}</p>
+                  <p style={{ color: '#64748b', fontSize: '0.875rem', margin: 0 }}>{dir.calle}{dir.ciudad ? `, ${dir.ciudad}` : ''}{dir.provincia ? `, ${dir.provincia}` : ''}</p>
+                </div>
+                <button type="button" onClick={() => handleDelete(dir.id)} style={{ background: 'none', border: 'none', color: '#e53e3e', cursor: 'pointer', fontSize: '0.75rem' }}>
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          )) : (
+            <p style={{ color: '#64748b', fontSize: '0.875rem' }}>No tenés direcciones de entrega guardadas.</p>
+          )}
+        </div>
+      ) : null}
+    </article>
   )
 }
 

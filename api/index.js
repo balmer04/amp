@@ -107,6 +107,80 @@ async function initDB() {
       ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
   `);
 
+  // Tablas para módulos 1-8
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cuenta_corriente (
+      id SERIAL PRIMARY KEY,
+      client_json_id INTEGER NOT NULL,
+      tipo VARCHAR(20) NOT NULL,
+      descripcion VARCHAR(200),
+      monto NUMERIC(12,2) NOT NULL,
+      referencia_id VARCHAR(50),
+      fecha TIMESTAMP DEFAULT NOW(),
+      creado_por INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS stock_movimientos (
+      id SERIAL PRIMARY KEY,
+      producto_json_id VARCHAR(100) NOT NULL,
+      tipo VARCHAR(20) NOT NULL,
+      cantidad INTEGER NOT NULL,
+      motivo TEXT,
+      referencia_id VARCHAR(50),
+      fecha TIMESTAMP DEFAULT NOW(),
+      creado_por INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS listas_precios (
+      id SERIAL PRIMARY KEY,
+      nombre VARCHAR(100) NOT NULL,
+      descripcion TEXT,
+      activa BOOLEAN DEFAULT true,
+      creado_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS productos_precio (
+      id SERIAL PRIMARY KEY,
+      producto_json_id VARCHAR(100) NOT NULL,
+      lista_precios_id INTEGER REFERENCES listas_precios(id) ON DELETE CASCADE,
+      precio NUMERIC(12,2) NOT NULL,
+      UNIQUE(producto_json_id, lista_precios_id)
+    );
+    CREATE TABLE IF NOT EXISTS facturas (
+      id SERIAL PRIMARY KEY,
+      numero INTEGER NOT NULL,
+      tipo CHAR(1) NOT NULL,
+      client_json_id INTEGER NOT NULL,
+      pedido_json_id VARCHAR(50),
+      fecha DATE DEFAULT CURRENT_DATE,
+      subtotal NUMERIC(12,2),
+      iva NUMERIC(12,2) DEFAULT 0,
+      total NUMERIC(12,2),
+      estado VARCHAR(20) DEFAULT 'emitida',
+      items JSONB,
+      datos_cliente JSONB,
+      creado_por INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      creado_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(numero, tipo)
+    );
+    CREATE TABLE IF NOT EXISTS factura_numeracion (
+      tipo CHAR(1) PRIMARY KEY,
+      ultimo_numero INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS direcciones_entrega (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      nombre VARCHAR(100),
+      calle VARCHAR(200),
+      ciudad VARCHAR(100),
+      provincia VARCHAR(100),
+      codigo_postal VARCHAR(20),
+      predeterminada BOOLEAN DEFAULT false
+    );
+  `);
+
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT 'admin'`);
+  await pool.query(`
+    INSERT INTO factura_numeracion (tipo, ultimo_numero) VALUES ('A', 0), ('B', 0), ('C', 0) ON CONFLICT DO NOTHING
+  `);
+
   const { rows } = await pool.query('SELECT COUNT(*) as count FROM users');
   if (parseInt(rows[0].count, 10) === 0) {
     const hashedClient = bcrypt.hashSync('cliente123', 8);
@@ -1380,6 +1454,370 @@ app.post('/api/ai/client/chat', authenticateToken, async (req, res) => {
     systemPrompt: SYSTEM_PROMPT_CLIENTE,
     tools: CLIENT_TOOLS,
   });
+});
+
+// ── CUENTA CORRIENTE ────────────────────────────────────────────────────────
+app.get('/api/admin/cuenta-corriente/:clientId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const clientId = parseInt(req.params.clientId, 10);
+    const { rows } = await pool.query(
+      `SELECT cc.*, u.name as creado_por_nombre
+       FROM cuenta_corriente cc
+       LEFT JOIN users u ON cc.creado_por = u.id
+       WHERE cc.client_json_id = $1
+       ORDER BY cc.fecha DESC`,
+      [clientId]
+    );
+    // Calcular saldo
+    const saldo = rows.reduce((acc, row) => acc + parseFloat(row.monto), 0);
+    res.json({ ok: true, movimientos: rows, saldo });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/cuenta-corriente', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { client_json_id, tipo, descripcion, monto, referencia_id } = req.body;
+    if (!client_json_id || !tipo || monto === undefined) {
+      return res.status(400).json({ ok: false, message: 'Faltan campos requeridos.' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO cuenta_corriente (client_json_id, tipo, descripcion, monto, referencia_id, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [client_json_id, tipo, descripcion ?? null, parseFloat(monto), referencia_id ?? null, req.user.id]
+    );
+    res.status(201).json({ ok: true, movimiento: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.delete('/api/admin/cuenta-corriente/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    await pool.query('DELETE FROM cuenta_corriente WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ── STOCK MOVIMIENTOS ────────────────────────────────────────────────────────
+app.get('/api/admin/stock-movimientos/:productoId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { rows } = await pool.query(
+      `SELECT sm.*, u.name as creado_por_nombre
+       FROM stock_movimientos sm
+       LEFT JOIN users u ON sm.creado_por = u.id
+       WHERE sm.producto_json_id = $1
+       ORDER BY sm.fecha DESC
+       LIMIT 100`,
+      [req.params.productoId]
+    );
+    res.json({ ok: true, movimientos: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/stock-movimientos', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { producto_json_id, tipo, cantidad, motivo, referencia_id } = req.body;
+    if (!producto_json_id || !tipo || cantidad === undefined) {
+      return res.status(400).json({ ok: false, message: 'Faltan campos requeridos.' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO stock_movimientos (producto_json_id, tipo, cantidad, motivo, referencia_id, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [String(producto_json_id), tipo, parseInt(cantidad, 10), motivo ?? null, referencia_id ?? null, req.user.id]
+    );
+    res.status(201).json({ ok: true, movimiento: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ── LISTAS DE PRECIOS ────────────────────────────────────────────────────────
+app.get('/api/admin/listas-precios', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { rows } = await pool.query('SELECT * FROM listas_precios ORDER BY nombre ASC');
+    res.json({ ok: true, listas: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/listas-precios', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { nombre, descripcion, activa } = req.body;
+    if (!nombre) return res.status(400).json({ ok: false, message: 'Nombre requerido.' });
+    const { rows } = await pool.query(
+      'INSERT INTO listas_precios (nombre, descripcion, activa) VALUES ($1, $2, $3) RETURNING *',
+      [nombre, descripcion ?? null, activa !== false]
+    );
+    res.status(201).json({ ok: true, lista: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.put('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { nombre, descripcion, activa } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE listas_precios SET nombre = COALESCE($1, nombre), descripcion = COALESCE($2, descripcion),
+       activa = COALESCE($3, activa) WHERE id = $4 RETURNING *`,
+      [nombre ?? null, descripcion ?? null, activa ?? null, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Lista no encontrada.' });
+    res.json({ ok: true, lista: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.delete('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    await pool.query('DELETE FROM listas_precios WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.get('/api/admin/listas-precios/:id/precios', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { rows } = await pool.query(
+      'SELECT * FROM productos_precio WHERE lista_precios_id = $1 ORDER BY producto_json_id',
+      [req.params.id]
+    );
+    res.json({ ok: true, precios: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/listas-precios/:listId/precios', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { producto_json_id, precio } = req.body;
+    if (!producto_json_id || precio === undefined) return res.status(400).json({ ok: false, message: 'Faltan campos.' });
+    const { rows } = await pool.query(
+      `INSERT INTO productos_precio (producto_json_id, lista_precios_id, precio)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (producto_json_id, lista_precios_id) DO UPDATE SET precio = EXCLUDED.precio
+       RETURNING *`,
+      [String(producto_json_id), req.params.listId, parseFloat(precio)]
+    );
+    res.status(201).json({ ok: true, precio: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ── FACTURAS ─────────────────────────────────────────────────────────────────
+app.get('/api/admin/facturas', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { client_id, estado, tipo } = req.query;
+    let query = 'SELECT f.*, u.name as creado_por_nombre FROM facturas f LEFT JOIN users u ON f.creado_por = u.id WHERE 1=1';
+    const values = [];
+    if (client_id) { values.push(client_id); query += ` AND f.client_json_id = $${values.length}`; }
+    if (estado) { values.push(estado); query += ` AND f.estado = $${values.length}`; }
+    if (tipo) { values.push(tipo); query += ` AND f.tipo = $${values.length}`; }
+    query += ' ORDER BY f.creado_at DESC LIMIT 200';
+    const { rows } = await pool.query(query, values);
+    res.json({ ok: true, facturas: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/facturas', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { tipo, client_json_id, pedido_json_id, subtotal, iva, total, items, datos_cliente } = req.body;
+    if (!tipo || !client_json_id || !total) {
+      return res.status(400).json({ ok: false, message: 'Faltan campos requeridos.' });
+    }
+    // Obtener próximo número
+    const { rows: numRows } = await pool.query(
+      `UPDATE factura_numeracion SET ultimo_numero = ultimo_numero + 1 WHERE tipo = $1 RETURNING ultimo_numero`,
+      [tipo]
+    );
+    if (!numRows[0]) return res.status(400).json({ ok: false, message: `Tipo de factura inválido: ${tipo}` });
+    const numero = numRows[0].ultimo_numero;
+
+    const { rows } = await pool.query(
+      `INSERT INTO facturas (numero, tipo, client_json_id, pedido_json_id, subtotal, iva, total, items, datos_cliente, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [numero, tipo, client_json_id, pedido_json_id ?? null, subtotal ?? 0, iva ?? 0, total,
+       items ? JSON.stringify(items) : null, datos_cliente ? JSON.stringify(datos_cliente) : null, req.user.id]
+    );
+    res.status(201).json({ ok: true, factura: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.put('/api/admin/facturas/:id/anular', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { rows } = await pool.query(
+      `UPDATE facturas SET estado = 'anulada' WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Factura no encontrada.' });
+    res.json({ ok: true, factura: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ── USUARIOS ADMIN (Roles) ────────────────────────────────────────────────────
+app.get('/api/admin/usuarios', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { rows } = await pool.query(
+      `SELECT id, email, name, role, rol, is_active, created_at, last_login_at FROM users WHERE role = 'admin' ORDER BY name ASC`
+    );
+    res.json({ ok: true, usuarios: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/usuarios', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { email, name, password, rol } = req.body;
+    if (!email || !name || !password) return res.status(400).json({ ok: false, message: 'Email, nombre y contraseña son requeridos.' });
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (existing.rows.length > 0) return res.status(409).json({ ok: false, message: 'Email ya registrado.' });
+    const hash = bcrypt.hashSync(password, 10);
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, password, role, name, rol, is_active) VALUES ($1, $2, 'admin', $3, $4, true) RETURNING id, email, name, role, rol, is_active`,
+      [email.toLowerCase(), hash, name, rol || 'admin']
+    );
+    res.status(201).json({ ok: true, usuario: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { name, rol, is_active, password } = req.body;
+    if (password) {
+      const hash = bcrypt.hashSync(password, 10);
+      await pool.query('UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2', [hash, req.params.id]);
+    }
+    const { rows } = await pool.query(
+      `UPDATE users SET name = COALESCE($1, name), rol = COALESCE($2, rol), is_active = COALESCE($3, is_active), updated_at = NOW()
+       WHERE id = $4 AND role = 'admin' RETURNING id, email, name, role, rol, is_active`,
+      [name ?? null, rol ?? null, is_active ?? null, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' });
+    res.json({ ok: true, usuario: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ── DIRECCIONES DE ENTREGA (cliente) ─────────────────────────────────────────
+app.get('/api/client/direcciones', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const { rows } = await pool.query(
+      'SELECT * FROM direcciones_entrega WHERE user_id = $1 ORDER BY predeterminada DESC, id ASC',
+      [req.user.id]
+    );
+    res.json({ ok: true, direcciones: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/client/direcciones', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const { nombre, calle, ciudad, provincia, codigo_postal, predeterminada } = req.body;
+    if (predeterminada) {
+      await pool.query('UPDATE direcciones_entrega SET predeterminada = false WHERE user_id = $1', [req.user.id]);
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO direcciones_entrega (user_id, nombre, calle, ciudad, provincia, codigo_postal, predeterminada)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [req.user.id, nombre ?? null, calle ?? null, ciudad ?? null, provincia ?? null, codigo_postal ?? null, predeterminada || false]
+    );
+    res.status(201).json({ ok: true, direccion: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.put('/api/client/direcciones/:id', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const { nombre, calle, ciudad, provincia, codigo_postal, predeterminada } = req.body;
+    if (predeterminada) {
+      await pool.query('UPDATE direcciones_entrega SET predeterminada = false WHERE user_id = $1', [req.user.id]);
+    }
+    const { rows } = await pool.query(
+      `UPDATE direcciones_entrega SET nombre = COALESCE($1, nombre), calle = COALESCE($2, calle),
+       ciudad = COALESCE($3, ciudad), provincia = COALESCE($4, provincia),
+       codigo_postal = COALESCE($5, codigo_postal), predeterminada = COALESCE($6, predeterminada)
+       WHERE id = $7 AND user_id = $8 RETURNING *`,
+      [nombre ?? null, calle ?? null, ciudad ?? null, provincia ?? null, codigo_postal ?? null, predeterminada ?? null, req.params.id, req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Dirección no encontrada.' });
+    res.json({ ok: true, direccion: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.delete('/api/client/direcciones/:id', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    await pool.query('DELETE FROM direcciones_entrega WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ── CUENTA CORRIENTE (vista cliente) ─────────────────────────────────────────
+app.get('/api/client/cuenta-corriente', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    // Encontrar el client_json_id del usuario actual via app_state
+    const stateResult = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
+    if (!stateResult.rows[0]) return res.json({ ok: true, movimientos: [], saldo: 0 });
+    const state = JSON.parse(stateResult.rows[0].state_json);
+    const client = state.clients?.find((c) => c.email === req.user.email);
+    if (!client) return res.json({ ok: true, movimientos: [], saldo: 0 });
+
+    const { rows } = await pool.query(
+      'SELECT * FROM cuenta_corriente WHERE client_json_id = $1 ORDER BY fecha DESC',
+      [client.id]
+    );
+    const saldo = rows.reduce((acc, row) => acc + parseFloat(row.monto), 0);
+    res.json({ ok: true, movimientos: rows, saldo, creditLimit: client.creditLimit ?? 0, pendingBalance: client.pendingBalance ?? 0 });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
 });
 
 export default app;

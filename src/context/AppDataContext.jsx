@@ -615,6 +615,42 @@ export function AppDataProvider({ children }) {
     })
   }
 
+  const updateProductStockMinimo = (productId, nextMinimo, actorName) => {
+    updateState((current) => {
+      const product = current.products.find((entry) => entry.id === productId)
+      if (!product) return current
+      return {
+        ...current,
+        products: current.products.map((entry) =>
+          entry.id === productId
+            ? { ...entry, stockMinimo: Math.max(Number(nextMinimo) || 0, 0) }
+            : entry,
+        ),
+        auditLog: appendAuditEntry(current.auditLog, actorName, 'actualizó stock mínimo de', product.name),
+      }
+    })
+  }
+
+  const adjustProductStock = (productId, delta, motivo, actorName) => {
+    updateState((current) => {
+      const product = current.products.find((entry) => entry.id === productId)
+      if (!product) return current
+      const nextStock = Math.max((Number(product.currentStock) || 0) + delta, 0)
+      return {
+        ...current,
+        products: current.products.map((entry) =>
+          entry.id === productId ? { ...entry, currentStock: nextStock } : entry,
+        ),
+        auditLog: appendAuditEntry(
+          current.auditLog,
+          actorName,
+          delta >= 0 ? 'ingresó stock de' : 'egresó stock de',
+          `${product.name} (${delta >= 0 ? '+' : ''}${delta} uni${motivo ? ` — ${motivo}` : ''})`,
+        ),
+      }
+    })
+  }
+
   const deleteProduct = (productId, actorName) => {
     updateState((current) => {
       const product = current.products.find((entry) => entry.id === productId)
@@ -1286,6 +1322,8 @@ export function AppDataProvider({ children }) {
       saveClient,
       addClientActivity,
       updateProductStock,
+      updateProductStockMinimo,
+      adjustProductStock,
       deleteProduct,
       importProducts,
       updateTierThreshold,
