@@ -14,14 +14,18 @@
   -moz-osx-font-smoothing: grayscale;
 
   /* Design tokens */
-  --color-brand-blue: #123281;
+  --color-brand-blue: #18181b;
+  --color-brand: #18181b;
+  --color-brand-mid: #27272a;
+  --color-brand-muted: #52525b;
   --color-brand-red: #d62128;
   --color-error: #c0392b;
-  --color-text-primary: #13212c;
-  --color-text-secondary: #5c6d82;
-  --color-border: #dbe3ef;
-  --radius-card: 0.5rem;
-  --radius-button: 0.35rem;
+  --color-text-primary: #18181b;
+  --color-text-secondary: #52525b;
+  --color-border: #e4e4e7;
+  --color-surface: #f4f4f5;
+  --radius-card: 0.6rem;
+  --radius-button: 0.4rem;
   --radius-pill: 999px;
 }
 

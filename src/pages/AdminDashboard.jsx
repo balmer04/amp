@@ -2558,7 +2558,7 @@ function ProductImportModal({ isOpen, onClose, existingProducts, onImport }) {
           <h4>Formato esperado</h4>
           <div className="admin-card-stack">
             <div className="admin-import-help-row">
-              <strong>Excel Andres Merino</strong>
+              <strong>Formato Excel esperado</strong>
               <span>Fila 1 se ignora. Fila 2 debe contener: CODIGO, CODIGO_PRO, DETALLE, MARCA, UNID, UNI_MED, REVENTA SIN IVA, GENERAL CON IVA.</span>
             </div>
             <div className="admin-import-help-row">
@@ -3695,14 +3695,10 @@ export function AdminDashboard() {
       <main className="admin-crm-page">
         <aside className={isSidebarOpen ? 'admin-sidebar open' : 'admin-sidebar'}>
           <div className="admin-sidebar-brand">
-            <img
-              src="/branding/navbar-logo.svg"
-              alt="Andres Merino"
-              className="admin-sidebar-logo"
-            />
+            <div className="admin-sidebar-wordmark">Nexo</div>
             <div className="admin-sidebar-brand-meta">
               <span className="admin-sidebar-status-dot" aria-hidden="true"></span>
-              <small>Panel admin</small>
+              <small>Panel operativo</small>
             </div>
           </div>
 
@@ -3775,7 +3771,7 @@ export function AdminDashboard() {
               <span className="admin-card-eyebrow">Panel administrador</span>
               <h1>
                 {activeSection === 'dashboard'
-                  ? settings.branding?.adminDashboardTitle || 'CRM operativo Andres Merino'
+                  ? settings.branding?.adminDashboardTitle || 'Panel operativo'
                   : activeSectionLabel}
               </h1>
             </div>
@@ -5074,7 +5070,7 @@ export function AdminDashboard() {
                       onBlur={(event) =>
                         updateAdminSettings(
                           'branding',
-                          { adminDashboardTitle: event.target.value.trim() || 'CRM operativo Andres Merino' },
+                          { adminDashboardTitle: event.target.value.trim() || 'Panel operativo' },
                           session.name,
                         )
                       }

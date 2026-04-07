@@ -63,9 +63,9 @@ export default function ChatCliente() {
   return (
     <div className="chat-wrapper chat-cliente">
       <div className="chat-header">
-        <div className="chat-avatar">AM</div>
+        <div className="chat-avatar">NX</div>
         <div className="chat-header-info">
-          <p className="chat-name">Asistente Andres Merino</p>
+          <p className="chat-name">Asistente Nexo</p>
           <p className="chat-subtitle">Compras mayoristas · Consultas · Pedidos</p>
         </div>
         <button className="chat-clear-btn" onClick={clearChat} title="Nuevo chat">

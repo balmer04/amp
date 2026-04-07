@@ -1700,7 +1700,7 @@ function ClientChatCard({
 
       <div className="client-chat-statusbar">
         <div className="client-chat-identity">
-          <strong>Administracion — Andres Merino</strong>
+          <strong>Administración — Nexo</strong>
           <span className="client-chat-presence">
             <span className="client-chat-presence-dot"></span>
             En linea
