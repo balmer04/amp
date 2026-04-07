@@ -18,6 +18,47 @@ function formatConversationLabel(conversation, index) {
   }).format(date)
 }
 
+function renderBold(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/)
+  if (parts.length === 1) return text
+  return parts.map((p, i) =>
+    p.startsWith('**') && p.endsWith('**')
+      ? <strong key={i}>{p.slice(2, -2)}</strong>
+      : <span key={i}>{p}</span>
+  )
+}
+
+function MsgContent({ text }) {
+  return (
+    <div className="ai-msg-body">
+      {text.split('\n').map((line, i) => {
+        const trimmed = line.trim()
+        if (!trimmed) return <div key={i} className="ai-msg-gap" />
+
+        const isList = trimmed.startsWith('- ') || trimmed.startsWith('• ')
+        const isNumbered = /^\d+\.\s/.test(trimmed)
+        const isHeader = /^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\d]{4,}:/.test(trimmed) && !isList
+
+        if (isHeader) {
+          return <p key={i} className="ai-line-header">{renderBold(trimmed)}</p>
+        }
+        if (isList) {
+          return (
+            <p key={i} className="ai-line-item">
+              <span className="ai-bullet">›</span>
+              {renderBold(trimmed.slice(2))}
+            </p>
+          )
+        }
+        if (isNumbered) {
+          return <p key={i} className="ai-line-item ai-line-numbered">{renderBold(trimmed)}</p>
+        }
+        return <p key={i} className="ai-line">{renderBold(trimmed)}</p>
+      })}
+    </div>
+  )
+}
+
 export default function ChatAdmin() {
   const { session } = useAuth()
   const {
@@ -56,20 +97,36 @@ export default function ChatAdmin() {
 
   const shortcuts = [
     {
-      label: 'Clientes sin compra en 60 dias',
-      prompt: 'Mostrame que clientes no compraron en los ultimos 60 dias y que accion comercial sugeris.',
+      label: '📦 Pedidos pendientes',
+      prompt: 'Mostrame todos los pedidos que están pendientes o en preparación ahora mismo.',
     },
     {
-      label: 'Pedidos urgentes de hoy',
-      prompt: 'Como priorizo los pedidos de hoy segun urgencia y fecha de entrega comprometida?',
+      label: '💸 Deudores',
+      prompt: 'Listame los clientes con saldo pendiente mayor a $0, ordenados por deuda.',
     },
     {
-      label: 'Alerta de stock',
-      prompt: 'Que senales debo mirar para detectar riesgo de quiebre de stock en productos de alta rotacion?',
+      label: '🏆 Top clientes del mes',
+      prompt: 'Cuáles fueron los 10 mejores clientes por facturación en los últimos 3 meses?',
     },
     {
-      label: 'Redactar seguimiento comercial',
-      prompt: 'Ayudame a redactar un mensaje de seguimiento para un cliente que no compra hace 45 dias.',
+      label: '📉 Clientes inactivos 60 días',
+      prompt: 'Qué clientes no compraron en los últimos 60 días? Dame acciones comerciales concretas para cada uno.',
+    },
+    {
+      label: '🔴 Alertas de stock',
+      prompt: 'Qué productos están por debajo del stock mínimo? Qué me recomendás reponer?',
+    },
+    {
+      label: '📈 Resumen del mes',
+      prompt: 'Dame el resumen de ventas del mes actual y comparalo con el mes anterior.',
+    },
+    {
+      label: '🛒 Proyección de compra',
+      prompt: 'En base a las ventas de los últimos 3 meses, qué productos debería pedir a fábrica este mes?',
+    },
+    {
+      label: '✉️ Mensaje de reactivación',
+      prompt: 'Ayudame a redactar un mensaje de WhatsApp para reactivar un cliente que no compra hace 45 días.',
     },
   ]
 
@@ -109,8 +166,8 @@ export default function ChatAdmin() {
       <div className="chat-messages-area">
         {messages.length === 0 && (
           <div className="chat-empty-state">
-            <p>En que gestion te ayudo hoy?</p>
-            <div className="chat-sugerencias">
+            <p className="chat-empty-title">¿En qué gestión te ayudo hoy?</p>
+            <div className="chat-sugerencias chat-sugerencias--grid">
               {shortcuts.map((shortcut) => (
                 <button
                   key={shortcut.label}
@@ -126,7 +183,10 @@ export default function ChatAdmin() {
 
         {messages.map((msg, index) => (
           <div key={index} className={`chat-bubble chat-bubble--${msg.role}`}>
-            <p>{msg.content}</p>
+            {msg.role === 'assistant'
+              ? <MsgContent text={msg.content} />
+              : <p>{msg.content}</p>
+            }
           </div>
         ))}
 
