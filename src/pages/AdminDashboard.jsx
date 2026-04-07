@@ -922,9 +922,69 @@ function ClientDetailModal({
   onClose,
   onAddActivity,
   onDelete,
+  session,
 }) {
+  const [activeTab, setActiveTab] = useState('info')
   const [activityType, setActivityType] = useState('Llamada')
   const [activityDescription, setActivityDescription] = useState('')
+  const [ccMovimientos, setCcMovimientos] = useState([])
+  const [ccSaldo, setCcSaldo] = useState(0)
+  const [ccLoading, setCcLoading] = useState(false)
+  const [ccForm, setCcForm] = useState({ tipo: 'pago', descripcion: '', monto: '' })
+  const [ccSaving, setCcSaving] = useState(false)
+
+  useEffect(() => {
+    if (activeTab === 'cc' && client) {
+      setCcLoading(true)
+      const token = localStorage.getItem('amp-reventa-session')
+        ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
+        : null
+      fetch(`/api/admin/cuenta-corriente/${client.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.ok) {
+            setCcMovimientos(data.movimientos)
+            setCcSaldo(data.saldo)
+          }
+        })
+        .catch(() => {})
+        .finally(() => setCcLoading(false))
+    }
+  }, [activeTab, client])
+
+  const handleCcSave = () => {
+    if (!ccForm.monto || isNaN(parseFloat(ccForm.monto))) return
+    setCcSaving(true)
+    const token = localStorage.getItem('amp-reventa-session')
+      ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
+      : null
+    // Para pago: monto negativo (reduce deuda). Para factura/ajuste: positivo.
+    const montoFinal = ccForm.tipo === 'pago' || ccForm.tipo === 'nota_credito'
+      ? -Math.abs(parseFloat(ccForm.monto))
+      : Math.abs(parseFloat(ccForm.monto))
+    fetch('/api/admin/cuenta-corriente', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        client_json_id: client.id,
+        tipo: ccForm.tipo,
+        descripcion: ccForm.descripcion,
+        monto: montoFinal,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) {
+          setCcMovimientos((prev) => [data.movimiento, ...prev])
+          setCcSaldo((prev) => prev + parseFloat(data.movimiento.monto))
+          setCcForm({ tipo: 'pago', descripcion: '', monto: '' })
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCcSaving(false))
+  }
 
   if (!client) {
     return null
@@ -941,6 +1001,8 @@ function ClientDetailModal({
     pendingBalance: 0,
     specialDiscount: 0,
     paymentTerms: 'Contado',
+    condicionIva: 'Monotributista',
+    etiquetas: [],
     ...client,
   }
   const safeClientOrders = Array.isArray(clientOrders) ? clientOrders : []
@@ -950,6 +1012,14 @@ function ClientDetailModal({
   const daysWithoutBuying = safeClient.lastPurchase
     ? Math.floor((Date.now() - new Date(safeClient.lastPurchase.createdAt).getTime()) / (1000 * 60 * 60 * 24))
     : null
+  const creditDisponible = Math.max((Number(safeClient.creditLimit) || 0) - (Number(safeClient.pendingBalance) || 0), 0)
+
+  const CLIENT_DETAIL_TABS = [
+    { id: 'info', label: 'Información' },
+    { id: 'pedidos', label: 'Pedidos' },
+    { id: 'cc', label: 'Cuenta corriente' },
+    { id: 'puntos', label: 'Puntos' },
+  ]
 
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
@@ -992,217 +1062,363 @@ function ClientDetailModal({
           </div>
         </div>
 
-        <div className="admin-client-recap-banner">
-          <strong>Resumen comercial</strong>
-          <span>
-            {daysWithoutBuying !== null
-              ? `${safeClient.businessName} lleva ${daysWithoutBuying} dias desde su ultima compra.`
-              : `${safeClient.businessName} aun no tiene compras registradas.`}
-          </span>
-          <div className="admin-client-recap-tags">
-            {safeClient.pendingBalance > 0 ? <span>Saldo pendiente</span> : null}
-            {daysWithoutBuying !== null && daysWithoutBuying > 60 ? <span>En riesgo</span> : null}
-            {loyalty.nextTier ? (
-              <span>{`A ${loyalty.pointsToNext.toLocaleString('es-AR')} pts de ${loyalty.nextTier.name}`}</span>
-            ) : (
-              <span>Nivel maximo</span>
-            )}
-          </div>
+        {/* Tabs de navegación */}
+        <div className="admin-client-tabs">
+          {CLIENT_DETAIL_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={activeTab === tab.id ? 'admin-client-tab active' : 'admin-client-tab'}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        <div className="admin-client-modal-grid">
-          <section className="admin-modal-section">
-            <h4>Datos generales</h4>
-            <div className="admin-client-info-grid">
-              <div><span>Nombre / Razon Social</span><strong>{safeClient.businessName}</strong></div>
-              <div><span>CUIT / DNI</span><strong>{safeClient.taxId}</strong></div>
-              <div><span>Telefono principal</span><strong>{safeClient.phone}</strong></div>
-              <div><span>Telefono alternativo</span><strong>{safeClient.altPhone || 'Sin dato'}</strong></div>
-              <div><span>Email</span><strong>{safeClient.email}</strong></div>
-              <div><span>Direccion</span><strong>{safeClient.address}</strong></div>
-              <div><span>Ciudad</span><strong>{safeClient.city}</strong></div>
-              <div><span>Provincia</span><strong>{safeClient.province}</strong></div>
-              <div><span>Tipo de cliente</span><strong>{safeClient.category}</strong></div>
-              <div><span>Estado</span><strong>{safeClient.status}</strong></div>
-              <div><span>Fecha de alta</span><strong>{formatDate(safeClient.createdAt)}</strong></div>
-            </div>
-            <div className="admin-client-notes-box">
-              <span>Notas internas</span>
-              <p>{safeClient.note || 'Sin notas internas.'}</p>
-            </div>
-          </section>
-
-          <section className="admin-modal-section">
-            <h4>Datos comerciales</h4>
-            <div className="admin-client-info-grid">
-              <div><span>Nivel actual</span><strong>{safeClient.tier}</strong></div>
-              <div><span>Puntos acumulados</span><strong>{getClientLifetimePoints(safeClient).toLocaleString('es-AR')} pts</strong></div>
-              <div><span>Limite de credito</span><strong>{formatCurrency(Number(safeClient.creditLimit) || 0)}</strong></div>
-              <div><span>Saldo pendiente</span><strong>{formatCurrency(Number(safeClient.pendingBalance) || 0)}</strong></div>
-              <div><span>Condicion de pago</span><strong>{safeClient.paymentTerms}</strong></div>
-              <div><span>Descuento especial</span><strong>{Number(safeClient.specialDiscount) || 0}%</strong></div>
-              <div><span>Lista de precios</span><strong>{safeClient.priceList}</strong></div>
-              <div><span>Sucursal habitual</span><strong>{safeClient.preferredBranch || 'Sin asignar'}</strong></div>
-              <div><span>Credito disponible</span><strong>{formatCurrency(Math.max((Number(safeClient.creditLimit) || 0) - (Number(safeClient.pendingBalance) || 0), 0))}</strong></div>
-              <div>
-                <span>Proximo nivel</span>
-                <strong>
-                  {loyalty.nextTier
-                    ? `${loyalty.pointsToNext.toLocaleString('es-AR')} pts para ${loyalty.nextTier.name}`
-                    : 'Nivel maximo alcanzado'}
-                </strong>
+        {/* TAB: INFORMACIÓN */}
+        {activeTab === 'info' ? (
+          <div>
+            <div className="admin-client-recap-banner">
+              <strong>Resumen comercial</strong>
+              <span>
+                {daysWithoutBuying !== null
+                  ? `${safeClient.businessName} lleva ${daysWithoutBuying} dias desde su ultima compra.`
+                  : `${safeClient.businessName} aun no tiene compras registradas.`}
+              </span>
+              <div className="admin-client-recap-tags">
+                {safeClient.pendingBalance > 0 ? <span>Saldo pendiente</span> : null}
+                {daysWithoutBuying !== null && daysWithoutBuying > 60 ? <span>En riesgo</span> : null}
+                {loyalty.nextTier ? (
+                  <span>{`A ${loyalty.pointsToNext.toLocaleString('es-AR')} pts de ${loyalty.nextTier.name}`}</span>
+                ) : (
+                  <span>Nivel maximo</span>
+                )}
               </div>
             </div>
-          </section>
-        </div>
 
-        <section className="admin-modal-section">
-          <h4>Historial de pedidos del cliente</h4>
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head admin-client-orders-grid">
-              <span>N° Pedido</span>
-              <span>Fecha</span>
-              <span>Total</span>
-              <span>Estado</span>
-              <span>Accion</span>
+            <div className="admin-client-modal-grid">
+              <section className="admin-modal-section">
+                <h4>Datos generales</h4>
+                <div className="admin-client-info-grid">
+                  <div><span>Nombre / Razon Social</span><strong>{safeClient.businessName}</strong></div>
+                  <div><span>CUIT / DNI</span><strong>{safeClient.taxId}</strong></div>
+                  <div><span>Condicion IVA</span><strong>{safeClient.condicionIva || 'Monotributista'}</strong></div>
+                  <div><span>Telefono principal</span><strong>{safeClient.phone}</strong></div>
+                  <div><span>Telefono alternativo</span><strong>{safeClient.altPhone || 'Sin dato'}</strong></div>
+                  <div><span>Email</span><strong>{safeClient.email}</strong></div>
+                  <div><span>Direccion</span><strong>{safeClient.address}</strong></div>
+                  <div><span>Ciudad</span><strong>{safeClient.city}</strong></div>
+                  <div><span>Provincia</span><strong>{safeClient.province}</strong></div>
+                  <div><span>Tipo de cliente</span><strong>{safeClient.category}</strong></div>
+                  <div><span>Estado</span><strong>{safeClient.status}</strong></div>
+                  <div><span>Fecha de alta</span><strong>{formatDate(safeClient.createdAt)}</strong></div>
+                </div>
+                {safeClient.etiquetas && safeClient.etiquetas.length > 0 ? (
+                  <div className="admin-client-notes-box">
+                    <span>Segmentos / Etiquetas</span>
+                    <div className="admin-client-docs-tags">
+                      {safeClient.etiquetas.map((tag) => <span key={tag}>{tag}</span>)}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="admin-client-notes-box">
+                  <span>Notas internas</span>
+                  <p>{safeClient.note || 'Sin notas internas.'}</p>
+                </div>
+              </section>
+
+              <section className="admin-modal-section">
+                <h4>Datos comerciales</h4>
+                <div className="admin-client-info-grid">
+                  <div><span>Nivel actual</span><strong>{safeClient.tier}</strong></div>
+                  <div><span>Puntos acumulados</span><strong>{getClientLifetimePoints(safeClient).toLocaleString('es-AR')} pts</strong></div>
+                  <div><span>Limite de credito</span><strong>{formatCurrency(Number(safeClient.creditLimit) || 0)}</strong></div>
+                  <div><span>Saldo pendiente</span><strong>{formatCurrency(Number(safeClient.pendingBalance) || 0)}</strong></div>
+                  <div><span>Credito disponible</span><strong>{formatCurrency(creditDisponible)}</strong></div>
+                  <div><span>Condicion de pago</span><strong>{safeClient.paymentTerms}</strong></div>
+                  <div><span>Descuento especial</span><strong>{Number(safeClient.specialDiscount) || 0}%</strong></div>
+                  <div><span>Lista de precios</span><strong>{safeClient.priceList}</strong></div>
+                  <div><span>Sucursal habitual</span><strong>{safeClient.preferredBranch || 'Sin asignar'}</strong></div>
+                  <div>
+                    <span>Proximo nivel</span>
+                    <strong>
+                      {loyalty.nextTier
+                        ? `${loyalty.pointsToNext.toLocaleString('es-AR')} pts para ${loyalty.nextTier.name}`
+                        : 'Nivel maximo alcanzado'}
+                    </strong>
+                  </div>
+                </div>
+              </section>
             </div>
-            {safeClientOrders.length > 0 ? safeClientOrders.map((order) => (
-              <div key={order.id} className="admin-table-row admin-client-orders-grid">
-                <strong>{order.id}</strong>
-                <span>{formatDate(order.createdAt)}</span>
-                <strong>{formatCurrency(order.total)}</strong>
-                <span className={`admin-status-badge ${getOrderStatusClass(order.status)}`}>
-                  {order.status}
-                </span>
-                <button type="button" className="admin-table-link" onClick={() => onOpenOrderDetail(order.id)}>
-                  Ver detalle
+
+            <section className="admin-modal-section">
+              <div className="admin-modal-header">
+                <div><h4>Actividad y notas</h4></div>
+              </div>
+              <div className="admin-activity-form">
+                <select value={activityType} onChange={(event) => setActivityType(event.target.value)}>
+                  <option value="Llamada">Llamada</option>
+                  <option value="Reunion">Reunion</option>
+                  <option value="Email">Email</option>
+                  <option value="Nota">Nota</option>
+                </select>
+                <input
+                  type="text"
+                  value={activityDescription}
+                  onChange={(event) => setActivityDescription(event.target.value)}
+                  placeholder="Agregar nueva actividad..."
+                />
+                <button
+                  type="button"
+                  className="admin-primary-btn"
+                  onClick={() => {
+                    if (!activityDescription.trim()) return
+                    onAddActivity({
+                      type: activityType,
+                      date: new Date().toISOString(),
+                      description: activityDescription.trim(),
+                    })
+                    setActivityDescription('')
+                    setActivityType('Llamada')
+                  }}
+                >
+                  Agregar
                 </button>
               </div>
-            )) : <div className="admin-empty-inline">Todavia no hay pedidos registrados para este cliente.</div>}
-          </div>
-        </section>
-
-        <section className="admin-modal-section">
-          <h4>Historial de pagos</h4>
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head admin-payments-grid">
-              <span>Fecha</span>
-              <span>Monto</span>
-              <span>Medio</span>
-              <span>Referencia</span>
-              <span>Registrado por</span>
-            </div>
-            {safeClient.paymentHistory.length > 0 ? safeClient.paymentHistory.map((payment) => (
-              <div key={payment.id} className="admin-table-row admin-payments-grid">
-                <span>{formatDate(payment.date)}</span>
-                <strong>{formatCurrency(payment.amount)}</strong>
-                <span>{payment.method}</span>
-                <span>{payment.reference}</span>
-                <span>{payment.registeredBy}</span>
+              <div className="admin-activity-timeline">
+                {safeClient.activityLog.map((activity) => (
+                  <div key={activity.id} className="admin-activity-item">
+                    <div>
+                      <strong>{activity.type}</strong>
+                      <span>{formatDate(activity.date)} - {activity.user}</span>
+                    </div>
+                    <p>{activity.description}</p>
+                  </div>
+                ))}
               </div>
-            )) : <div className="admin-empty-inline">No hay pagos cargados todavia.</div>}
-          </div>
-        </section>
+            </section>
 
-        <div className="admin-client-modal-grid">
-          <section className="admin-modal-section">
-            <h4>Documentos adjuntos</h4>
-            <div className="admin-client-docs-placeholder">
-              <strong>Espacio preparado para adjuntos</strong>
-              <p>
-                Aca vas a poder ver factura, constancia de CUIT, listas de precios y archivos
-                comerciales del cliente.
-              </p>
-              <div className="admin-client-docs-tags">
-                <span>CUIT</span>
-                <span>Factura</span>
-                <span>Lista de precios</span>
+            <section className="admin-modal-section admin-danger-zone">
+              <div className="admin-danger-copy">
+                <h4>Eliminar cliente</h4>
+                <p>Esta accion elimina la cuenta del CRM.</p>
               </div>
-            </div>
-          </section>
-
-          <section className="admin-modal-section">
-            <h4>Resumen IA futuro</h4>
-            <div className="admin-client-docs-placeholder admin-client-ai-preview">
-              <strong>
-                {daysWithoutBuying !== null
-                  ? `Lleva ${daysWithoutBuying} dias sin comprar`
-                  : 'Todavia no tiene compras registradas'}
-              </strong>
-              <p>
-                A futuro, la IA va a resumir aca el estado comercial del cliente, su frecuencia
-                de compra y la mejor accion sugerida para el equipo.
-              </p>
-            </div>
-          </section>
-        </div>
-
-        <section className="admin-modal-section">
-          <div className="admin-modal-header">
-            <div>
-              <h4>Actividad y notas</h4>
-            </div>
+              <button type="button" className="admin-action-btn cancel" onClick={onDelete}>
+                Eliminar cliente
+              </button>
+            </section>
           </div>
+        ) : null}
 
-          <div className="admin-activity-form">
-            <select value={activityType} onChange={(event) => setActivityType(event.target.value)}>
-              <option value="Llamada">Llamada</option>
-              <option value="Reunion">Reunion</option>
-              <option value="Email">Email</option>
-              <option value="Nota">Nota</option>
-            </select>
-            <input
-              type="text"
-              value={activityDescription}
-              onChange={(event) => setActivityDescription(event.target.value)}
-              placeholder="Agregar nueva actividad..."
-            />
-            <button
-              type="button"
-              className="admin-primary-btn"
-              onClick={() => {
-                if (!activityDescription.trim()) return
-                onAddActivity({
-                  type: activityType,
-                  date: new Date().toISOString(),
-                  description: activityDescription.trim(),
-                })
-                setActivityDescription('')
-                setActivityType('Llamada')
-              }}
-            >
-              Agregar actividad
-            </button>
-          </div>
-
-          <div className="admin-activity-timeline">
-            {safeClient.activityLog.map((activity) => (
-              <div key={activity.id} className="admin-activity-item">
-                <div>
-                  <strong>{activity.type}</strong>
-                  <span>{formatDate(activity.date)} - {activity.user}</span>
+        {/* TAB: PEDIDOS */}
+        {activeTab === 'pedidos' ? (
+          <div>
+            <section className="admin-modal-section">
+              <h4>Historial de pedidos</h4>
+              <div className="admin-table">
+                <div className="admin-table-row admin-table-head admin-client-orders-grid">
+                  <span>N° Pedido</span>
+                  <span>Fecha</span>
+                  <span>Total</span>
+                  <span>Estado</span>
+                  <span>Accion</span>
                 </div>
-                <p>{activity.description}</p>
+                {safeClientOrders.length > 0 ? safeClientOrders.map((order) => (
+                  <div key={order.id} className="admin-table-row admin-client-orders-grid">
+                    <strong>{order.id}</strong>
+                    <span>{formatDate(order.createdAt)}</span>
+                    <strong>{formatCurrency(order.total)}</strong>
+                    <span className={`admin-status-badge ${getOrderStatusClass(order.status)}`}>
+                      {order.status}
+                    </span>
+                    <button type="button" className="admin-table-link" onClick={() => onOpenOrderDetail(order.id)}>
+                      Ver detalle
+                    </button>
+                  </div>
+                )) : <div className="admin-empty-inline">Todavia no hay pedidos registrados para este cliente.</div>}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
 
-        <section className="admin-modal-section admin-danger-zone">
-          <div className="admin-danger-copy">
-            <h4>Eliminar cliente</h4>
-            <p>
-              Esta accion elimina la cuenta del CRM y la saca de la tabla principal.
-            </p>
+            <section className="admin-modal-section">
+              <h4>Historial de pagos</h4>
+              <div className="admin-table">
+                <div className="admin-table-row admin-table-head admin-payments-grid">
+                  <span>Fecha</span>
+                  <span>Monto</span>
+                  <span>Medio</span>
+                  <span>Referencia</span>
+                  <span>Registrado por</span>
+                </div>
+                {safeClient.paymentHistory.length > 0 ? safeClient.paymentHistory.map((payment) => (
+                  <div key={payment.id} className="admin-table-row admin-payments-grid">
+                    <span>{formatDate(payment.date)}</span>
+                    <strong>{formatCurrency(payment.amount)}</strong>
+                    <span>{payment.method}</span>
+                    <span>{payment.reference}</span>
+                    <span>{payment.registeredBy}</span>
+                  </div>
+                )) : <div className="admin-empty-inline">No hay pagos cargados todavia.</div>}
+              </div>
+            </section>
           </div>
-          <button
-            type="button"
-            className="admin-action-btn cancel"
-            onClick={onDelete}
-          >
-            Eliminar cliente
-          </button>
-        </section>
+        ) : null}
+
+        {/* TAB: CUENTA CORRIENTE */}
+        {activeTab === 'cc' ? (
+          <div>
+            <div className="admin-client-profile-summary" style={{ marginBottom: '1rem' }}>
+              <div className="admin-client-profile-pill">
+                <span>Saldo CC</span>
+                <strong style={{ color: ccSaldo > 0 ? '#e53e3e' : '#38a169' }}>
+                  {formatCurrency(Math.abs(ccSaldo))} {ccSaldo > 0 ? '(deuda)' : ccSaldo < 0 ? '(a favor)' : ''}
+                </strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Limite de credito</span>
+                <strong>{formatCurrency(Number(safeClient.creditLimit) || 0)}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Credito disponible</span>
+                <strong>{formatCurrency(creditDisponible)}</strong>
+              </div>
+            </div>
+
+            <section className="admin-modal-section">
+              <h4>Registrar movimiento</h4>
+              <div className="admin-activity-form">
+                <select value={ccForm.tipo} onChange={(e) => setCcForm((f) => ({ ...f, tipo: e.target.value }))}>
+                  <option value="pago">Pago recibido</option>
+                  <option value="factura">Factura emitida</option>
+                  <option value="nota_credito">Nota de crédito</option>
+                  <option value="ajuste">Ajuste</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Descripción (opcional)"
+                  value={ccForm.descripcion}
+                  onChange={(e) => setCcForm((f) => ({ ...f, descripcion: e.target.value }))}
+                />
+                <input
+                  type="number"
+                  placeholder="Monto ($)"
+                  value={ccForm.monto}
+                  onChange={(e) => setCcForm((f) => ({ ...f, monto: e.target.value }))}
+                  min="0"
+                  step="0.01"
+                />
+                <button
+                  type="button"
+                  className="admin-primary-btn"
+                  onClick={handleCcSave}
+                  disabled={ccSaving || !ccForm.monto}
+                >
+                  {ccSaving ? 'Guardando...' : 'Registrar'}
+                </button>
+              </div>
+            </section>
+
+            <section className="admin-modal-section">
+              <h4>Movimientos</h4>
+              {ccLoading ? (
+                <div className="admin-empty-inline">Cargando movimientos...</div>
+              ) : (
+                <div className="admin-table">
+                  <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1fr', gap: '0.5rem' }}>
+                    <span>Fecha</span>
+                    <span>Tipo</span>
+                    <span>Descripción</span>
+                    <span>Monto</span>
+                  </div>
+                  {ccMovimientos.length > 0 ? ccMovimientos.map((mov) => (
+                    <div key={mov.id} className="admin-table-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1fr', gap: '0.5rem' }}>
+                      <span>{formatDate(mov.fecha)}</span>
+                      <span className={`admin-status-badge ${mov.tipo === 'pago' || mov.tipo === 'nota_credito' ? 'aprobado' : 'pendiente'}`}>
+                        {mov.tipo}
+                      </span>
+                      <span>{mov.descripcion || '—'}</span>
+                      <strong style={{ color: parseFloat(mov.monto) < 0 ? '#38a169' : '#e53e3e' }}>
+                        {parseFloat(mov.monto) < 0 ? '-' : '+'}{formatCurrency(Math.abs(parseFloat(mov.monto)))}
+                      </strong>
+                    </div>
+                  )) : <div className="admin-empty-inline">Sin movimientos registrados.</div>}
+                </div>
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {/* TAB: PUNTOS */}
+        {activeTab === 'puntos' ? (
+          <div>
+            <div className="admin-client-profile-summary" style={{ marginBottom: '1rem' }}>
+              <div className="admin-client-profile-pill">
+                <span>Puntos acumulados</span>
+                <strong>{getClientLifetimePoints(safeClient).toLocaleString('es-AR')}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Puntos disponibles</span>
+                <strong>{(Number(safeClient.available_points) || 0).toLocaleString('es-AR')}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Nivel actual</span>
+                <strong>{safeClient.tier}</strong>
+              </div>
+              <div className="admin-client-profile-pill">
+                <span>Proximo nivel</span>
+                <strong>{loyalty.nextTier ? loyalty.nextTier.name : 'Nivel máximo'}</strong>
+              </div>
+            </div>
+
+            <section className="admin-modal-section">
+              <h4>Progreso hacia el siguiente nivel</h4>
+              {loyalty.nextTier ? (
+                <div style={{ padding: '1rem 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                    <span>{safeClient.tier}</span>
+                    <span>{loyalty.nextTier.name}</span>
+                  </div>
+                  <div style={{ background: '#e2e8f0', borderRadius: '9999px', height: '8px', overflow: 'hidden' }}>
+                    <div style={{
+                      background: '#3b82f6',
+                      height: '100%',
+                      borderRadius: '9999px',
+                      width: `${Math.min(100, 100 - (loyalty.pointsToNext / (loyalty.nextTier.threshold - (loyalty.currentTier?.threshold ?? 0))) * 100)}%`,
+                      transition: 'width 0.3s ease',
+                    }} />
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem' }}>
+                    Faltan {loyalty.pointsToNext.toLocaleString('es-AR')} pts para llegar a {loyalty.nextTier.name}
+                  </p>
+                </div>
+              ) : (
+                <p style={{ color: '#38a169', fontWeight: '600' }}>Nivel máximo alcanzado</p>
+              )}
+            </section>
+
+            <section className="admin-modal-section">
+              <h4>Historial de pedidos con puntos</h4>
+              <div className="admin-table">
+                <div className="admin-table-row admin-table-head admin-client-orders-grid">
+                  <span>N° Pedido</span>
+                  <span>Fecha</span>
+                  <span>Total</span>
+                  <span>Puntos otorgados</span>
+                  <span>Estado</span>
+                </div>
+                {safeClientOrders.length > 0 ? safeClientOrders.map((order) => (
+                  <div key={order.id} className="admin-table-row admin-client-orders-grid">
+                    <strong>{order.id}</strong>
+                    <span>{formatDate(order.createdAt)}</span>
+                    <strong>{formatCurrency(order.total)}</strong>
+                    <span>+{calculatePointsFromTotal(order.total)} pts</span>
+                    <span className={`admin-status-badge ${getOrderStatusClass(order.status)}`}>{order.status}</span>
+                  </div>
+                )) : <div className="admin-empty-inline">Sin pedidos para calcular puntos.</div>}
+              </div>
+            </section>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -4558,6 +4774,7 @@ export function AdminDashboard() {
       <ClientDetailModal
         client={selectedClient}
         clientOrders={selectedClientOrders}
+        session={session}
         onOpenOrderDetail={handleOpenOrderFromClient}
         onAddActivity={(activity) =>
           selectedClient
