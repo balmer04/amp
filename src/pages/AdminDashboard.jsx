@@ -20,6 +20,7 @@ import {
 const adminSections = [
   { id: 'dashboard', label: 'Inicio' },
   { id: 'pedidos', label: 'Pedidos' },
+  { id: 'cotizaciones', label: 'Cotizaciones' },
   { id: 'facturacion', label: 'Facturación' },
   { id: 'promociones', label: 'Promociones' },
   { id: 'clientes', label: 'Clientes' },
@@ -38,7 +39,7 @@ const adminSectionGroups = [
   },
   {
     title: 'Ventas',
-    items: ['pedidos', 'facturacion', 'promociones'],
+    items: ['pedidos', 'cotizaciones', 'facturacion', 'promociones'],
   },
   {
     title: 'Clientes',
@@ -141,6 +142,13 @@ function AdminSidebarIcon({ sectionId }) {
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 12 12 4l8 8-8 8z" />
           <circle cx="9" cy="9" r="1.2" />
+        </svg>
+      )
+    case 'cotizaciones':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 3h7l4 4v14H7z" />
+          <path d="M14 3v4h4M10 12h6M10 16h4" />
         </svg>
       )
     default:
@@ -515,6 +523,28 @@ function MetricCard({ title, value, detail, tone }) {
     <article className={`admin-metric-card ${tone}`}>
       <span className="admin-card-eyebrow">{title}</span>
       <strong>{value}</strong>
+      <p>{detail}</p>
+    </article>
+  )
+}
+
+function HeroMetricCard({ title, value, detail, tone }) {
+  return (
+    <article className={`admin-hero-card ${tone}`}>
+      <span className="admin-hero-card-label">{title}</span>
+      <strong className="admin-hero-card-value">{value}</strong>
+      <p className="admin-hero-card-detail">{detail}</p>
+    </article>
+  )
+}
+
+function SecondaryMetricCard({ title, value, detail, tone }) {
+  return (
+    <article className={`admin-secondary-card ${tone}`}>
+      <div className="admin-secondary-card-text">
+        <span>{title}</span>
+        <strong>{value}</strong>
+      </div>
       <p>{detail}</p>
     </article>
   )
@@ -3107,6 +3137,643 @@ function PromocionesSection() {
   )
 }
 
+// ─── Global topbar: search + notifications + profile dropdown ──────────────
+function AdminGlobalTopbar({ session, clients, products, orders, alerts, onLogout, onNavigate }) {
+  const [search, setSearch] = useState('')
+  const [showResults, setShowResults] = useState(false)
+  const [showNotifs, setShowNotifs] = useState(false)
+  const [showProfile, setShowProfile] = useState(false)
+  const searchRef = useRef(null)
+  const notifsRef = useRef(null)
+  const profileRef = useRef(null)
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) setShowResults(false)
+      if (notifsRef.current && !notifsRef.current.contains(e.target)) setShowNotifs(false)
+      if (profileRef.current && !profileRef.current.contains(e.target)) setShowProfile(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  // Search across clients, products, orders
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (q.length < 2) return null
+    const clientHits = clients
+      .filter((c) =>
+        (c.businessName || '').toLowerCase().includes(q) ||
+        (c.taxId || '').toLowerCase().includes(q) ||
+        (c.email || '').toLowerCase().includes(q),
+      )
+      .slice(0, 4)
+      .map((c) => ({ type: 'cliente', id: c.id, title: c.businessName, sub: c.taxId || c.email }))
+    const productHits = products
+      .filter((p) =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q),
+      )
+      .slice(0, 4)
+      .map((p) => ({ type: 'producto', id: p.id, title: p.name, sub: `SKU ${p.sku || '—'} · Stock ${p.currentStock ?? 0}` }))
+    const orderHits = orders
+      .filter((o) => String(o.id).toLowerCase().includes(q))
+      .slice(0, 3)
+      .map((o) => ({ type: 'pedido', id: o.id, title: `Pedido ${o.id}`, sub: `${o.status} · $${o.total}` }))
+    return [...clientHits, ...productHits, ...orderHits]
+  }, [search, clients, products, orders])
+
+  const handleResultClick = (result) => {
+    setShowResults(false)
+    setSearch('')
+    if (result.type === 'cliente') onNavigate('clientes', { clientId: result.id })
+    else if (result.type === 'producto') onNavigate('stock')
+    else if (result.type === 'pedido') onNavigate('pedidos')
+  }
+
+  const initials = (session?.name || 'A')
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+
+  return (
+    <div className="admin-global-topbar">
+      <div className="admin-global-search" ref={searchRef}>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" className="admin-global-search-icon">
+          <circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <path d="m20 20-4.5-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+        <input
+          type="text"
+          placeholder="Buscar cliente, producto o pedido…"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setShowResults(true) }}
+          onFocus={() => setShowResults(true)}
+        />
+        {showResults && searchResults && (
+          <div className="admin-global-search-results">
+            {searchResults.length === 0 ? (
+              <div className="admin-search-empty">Sin resultados para "{search}"</div>
+            ) : (
+              searchResults.map((r) => (
+                <button
+                  key={`${r.type}-${r.id}`}
+                  type="button"
+                  className="admin-search-result"
+                  onClick={() => handleResultClick(r)}
+                >
+                  <span className={`admin-pill ${r.type === 'cliente' ? 'info' : r.type === 'producto' ? 'success' : 'warning'}`}>
+                    {r.type}
+                  </span>
+                  <div>
+                    <strong>{r.title}</strong>
+                    <small>{r.sub}</small>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="admin-global-actions">
+        <div className="admin-global-notif" ref={notifsRef}>
+          <button
+            type="button"
+            className="admin-global-icon-btn"
+            onClick={() => setShowNotifs((v) => !v)}
+            aria-label="Notificaciones"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2H4.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              <path d="M10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            {alerts.length > 0 && <span className="admin-global-notif-dot">{alerts.length}</span>}
+          </button>
+          {showNotifs && (
+            <div className="admin-global-dropdown">
+              <div className="admin-global-dropdown-header">
+                <strong>Notificaciones</strong>
+                <small>{alerts.length} pendiente{alerts.length === 1 ? '' : 's'}</small>
+              </div>
+              {alerts.length === 0 ? (
+                <div className="admin-global-dropdown-empty">Todo en orden ✓</div>
+              ) : (
+                <div className="admin-global-dropdown-list">
+                  {alerts.slice(0, 6).map((a, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="admin-global-dropdown-item"
+                      onClick={() => { setShowNotifs(false); a.action?.() }}
+                    >
+                      <span className={`admin-pill ${a.tone}`}>{a.kind}</span>
+                      <span>{a.text}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="admin-global-profile" ref={profileRef}>
+          <button
+            type="button"
+            className="admin-global-profile-btn"
+            onClick={() => setShowProfile((v) => !v)}
+          >
+            <span className="admin-global-avatar">{initials}</span>
+            <span className="admin-global-profile-name">{session?.name || 'Admin'}</span>
+            <svg viewBox="0 0 24 24" width="12" height="12">
+              <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+          {showProfile && (
+            <div className="admin-global-dropdown admin-global-dropdown-right">
+              <div className="admin-global-profile-info">
+                <strong>{session?.name || 'Admin'}</strong>
+                <small>{session?.email || ''}</small>
+              </div>
+              <button
+                type="button"
+                className="admin-global-dropdown-item"
+                onClick={() => { setShowProfile(false); onNavigate('configuracion') }}
+              >
+                Configuración
+              </button>
+              <button
+                type="button"
+                className="admin-global-dropdown-item danger"
+                onClick={() => { setShowProfile(false); onLogout() }}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Cotizaciones: flujo previo al pedido ──────────────────────────────────
+const COTIZACION_ESTADOS = [
+  { id: 'borrador', label: 'Borrador', tone: 'neutral' },
+  { id: 'enviada', label: 'Enviada', tone: 'info' },
+  { id: 'aceptada', label: 'Aceptada', tone: 'success' },
+  { id: 'rechazada', label: 'Rechazada', tone: 'danger' },
+  { id: 'vencida', label: 'Vencida', tone: 'warning' },
+  { id: 'convertida', label: 'Convertida', tone: 'success' },
+]
+
+function CotizacionesSection({ clients, products }) {
+  const [cotizaciones, setCotizaciones] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [filtroEstado, setFiltroEstado] = useState('todos')
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [form, setForm] = useState({
+    client_json_id: '',
+    vencimiento: (() => {
+      const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10)
+    })(),
+    items: [{ productId: '', qty: 1, unitPrice: 0 }],
+    descuento: 0,
+    notas: '',
+  })
+
+  const loadCotizaciones = async () => {
+    setLoading(true)
+    try {
+      const token = getAuthToken()
+      const res = await fetch('/api/admin/cotizaciones', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.ok) setCotizaciones(data.cotizaciones || [])
+    } catch { /* noop */ }
+    setLoading(false)
+    setLoaded(true)
+  }
+
+  useEffect(() => { if (!loaded) loadCotizaciones() }, []) // eslint-disable-line
+
+  const resetForm = () => {
+    setForm({
+      client_json_id: '',
+      vencimiento: (() => {
+        const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10)
+      })(),
+      items: [{ productId: '', qty: 1, unitPrice: 0 }],
+      descuento: 0,
+      notas: '',
+    })
+    setEditing(null)
+    setShowForm(false)
+  }
+
+  const computeTotals = (items, descuento) => {
+    const subtotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+    const total = Math.max(subtotal - (Number(descuento) || 0), 0)
+    return { subtotal, total }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!form.client_json_id) return alert('Seleccioná un cliente.')
+    if (form.items.length === 0 || form.items.every((it) => !it.productId)) {
+      return alert('Agregá al menos un producto.')
+    }
+
+    const validItems = form.items.filter((it) => it.productId && Number(it.qty) > 0)
+    const itemsWithName = validItems.map((it) => {
+      const p = products.find((x) => String(x.id) === String(it.productId))
+      return {
+        productId: it.productId,
+        productName: p?.name || 'Producto',
+        sku: p?.sku || '',
+        qty: Number(it.qty),
+        unitPrice: Number(it.unitPrice),
+        subtotal: Number(it.qty) * Number(it.unitPrice),
+      }
+    })
+
+    const client = clients.find((c) => String(c.id) === String(form.client_json_id))
+    const { subtotal, total } = computeTotals(itemsWithName, form.descuento)
+
+    const payload = {
+      client_json_id: Number(form.client_json_id),
+      vencimiento: form.vencimiento,
+      items: itemsWithName,
+      subtotal,
+      descuento: Number(form.descuento) || 0,
+      total,
+      datos_cliente: client ? {
+        businessName: client.businessName,
+        taxId: client.taxId,
+        email: client.email,
+      } : null,
+      notas: form.notas || null,
+    }
+
+    const token = getAuthToken()
+    const method = editing ? 'PUT' : 'POST'
+    const url = editing ? `/api/admin/cotizaciones/${editing.id}` : '/api/admin/cotizaciones'
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!data.ok) return alert(data.message || 'Error guardando la cotización.')
+      resetForm()
+      loadCotizaciones()
+    } catch (err) {
+      alert('Error de red: ' + err.message)
+    }
+  }
+
+  const handleEdit = (c) => {
+    const items = Array.isArray(c.items) ? c.items : []
+    setForm({
+      client_json_id: String(c.client_json_id),
+      vencimiento: c.vencimiento?.slice(0, 10) || '',
+      items: items.length ? items.map((it) => ({
+        productId: String(it.productId),
+        qty: it.qty,
+        unitPrice: it.unitPrice,
+      })) : [{ productId: '', qty: 1, unitPrice: 0 }],
+      descuento: Number(c.descuento) || 0,
+      notas: c.notas || '',
+    })
+    setEditing(c)
+    setShowForm(true)
+  }
+
+  const handleChangeEstado = async (id, nuevoEstado) => {
+    const token = getAuthToken()
+    try {
+      const res = await fetch(`/api/admin/cotizaciones/${id}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: nuevoEstado }),
+      })
+      const data = await res.json()
+      if (data.ok) loadCotizaciones()
+    } catch { /* noop */ }
+  }
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar esta cotización?')) return
+    const token = getAuthToken()
+    try {
+      const res = await fetch(`/api/admin/cotizaciones/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) loadCotizaciones()
+    } catch { /* noop */ }
+  }
+
+  const handlePrint = (c) => {
+    const items = Array.isArray(c.items) ? c.items : []
+    const datos = c.datos_cliente || {}
+    const win = window.open('', '_blank')
+    win.document.write(`
+      <html><head><title>${c.numero}</title>
+      <style>
+        body { font-family: 'Inter', Arial, sans-serif; padding: 40px; color: #18181b; max-width: 800px; margin: auto; }
+        h1 { margin: 0 0 8px; font-size: 26px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 18px; border-bottom: 2px solid #18181b; margin-bottom: 24px; }
+        .brand { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+        .badge { display: inline-block; padding: 4px 10px; background: #f4f4f5; border-radius: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+        .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; font-size: 14px; }
+        .meta strong { display: block; color: #71717a; text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th { text-align: left; background: #f4f4f5; padding: 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #52525b; }
+        td { padding: 10px; border-bottom: 1px solid #e4e4e7; }
+        .totals { margin-left: auto; width: 280px; }
+        .totals div { display: flex; justify-content: space-between; padding: 6px 0; }
+        .totals .total { border-top: 2px solid #18181b; margin-top: 6px; padding-top: 10px; font-size: 18px; font-weight: 700; }
+        .footer { margin-top: 40px; font-size: 12px; color: #71717a; border-top: 1px solid #e4e4e7; padding-top: 16px; }
+        .notas { background: #fafafa; padding: 12px; border-radius: 6px; margin-top: 24px; font-size: 13px; }
+      </style>
+      </head><body>
+        <div class="header">
+          <div>
+            <div class="brand">Nexo</div>
+            <small>Plataforma mayorista</small>
+          </div>
+          <span class="badge">${c.numero}</span>
+        </div>
+        <h1>Cotización</h1>
+        <div class="meta">
+          <div><strong>Cliente</strong>${datos.businessName || 'Cliente'}<br><small>${datos.taxId || ''}</small></div>
+          <div><strong>Vencimiento</strong>${c.vencimiento?.slice(0, 10) || '—'}</div>
+          <div><strong>Fecha</strong>${c.fecha?.slice(0, 10) || ''}</div>
+          <div><strong>Estado</strong>${c.estado}</div>
+        </div>
+        <table>
+          <thead><tr><th>Producto</th><th>SKU</th><th>Cant.</th><th>Unitario</th><th>Subtotal</th></tr></thead>
+          <tbody>
+            ${items.map((it) => `<tr><td>${it.productName}</td><td>${it.sku || '—'}</td><td>${it.qty}</td><td>$${Number(it.unitPrice).toLocaleString('es-AR')}</td><td>$${Number(it.subtotal).toLocaleString('es-AR')}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="totals">
+          <div><span>Subtotal</span><strong>$${Number(c.subtotal).toLocaleString('es-AR')}</strong></div>
+          ${Number(c.descuento) > 0 ? `<div><span>Descuento</span><strong>-$${Number(c.descuento).toLocaleString('es-AR')}</strong></div>` : ''}
+          <div class="total"><span>Total</span><strong>$${Number(c.total).toLocaleString('es-AR')}</strong></div>
+        </div>
+        ${c.notas ? `<div class="notas"><strong>Notas:</strong> ${c.notas}</div>` : ''}
+        <div class="footer">Esta cotización es válida hasta ${c.vencimiento?.slice(0, 10) || 'la fecha indicada'}. Sujeta a stock y aprobación crediticia.</div>
+      </body></html>
+    `)
+    win.document.close()
+    setTimeout(() => win.print(), 300)
+  }
+
+  const filteredCotizaciones = useMemo(() => {
+    if (filtroEstado === 'todos') return cotizaciones
+    return cotizaciones.filter((c) => c.estado === filtroEstado)
+  }, [cotizaciones, filtroEstado])
+
+  const { subtotal: formSubtotal, total: formTotal } = computeTotals(
+    form.items.map((it) => ({
+      qty: it.qty,
+      unitPrice: it.unitPrice,
+    })),
+    form.descuento,
+  )
+
+  return (
+    <section className="admin-section">
+      <article className="admin-card">
+        <div className="admin-section-header">
+          <div>
+            <span className="admin-card-eyebrow">Pre-ventas</span>
+            <h2>Cotizaciones</h2>
+          </div>
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+            <select
+              value={filtroEstado}
+              onChange={(e) => setFiltroEstado(e.target.value)}
+              className="admin-select"
+            >
+              <option value="todos">Todos los estados</option>
+              {COTIZACION_ESTADOS.map((e) => (
+                <option key={e.id} value={e.id}>{e.label}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="admin-primary-btn"
+              onClick={() => { resetForm(); setShowForm(true) }}
+            >
+              + Nueva cotización
+            </button>
+          </div>
+        </div>
+
+        {showForm && (
+          <form className="admin-cotizacion-form" onSubmit={handleSubmit}>
+            <div className="admin-cotizacion-form-row">
+              <label className="field">
+                <span>Cliente</span>
+                <select
+                  value={form.client_json_id}
+                  onChange={(e) => setForm({ ...form, client_json_id: e.target.value })}
+                  required
+                >
+                  <option value="">Seleccionar cliente…</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.businessName} {c.taxId ? `· ${c.taxId}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Válida hasta</span>
+                <input
+                  type="date"
+                  value={form.vencimiento}
+                  onChange={(e) => setForm({ ...form, vencimiento: e.target.value })}
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="admin-cotizacion-items">
+              <div className="admin-cotizacion-items-head">
+                <span>Producto</span>
+                <span>Cant.</span>
+                <span>Unitario</span>
+                <span>Subtotal</span>
+                <span></span>
+              </div>
+              {form.items.map((item, idx) => {
+                const lineSub = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0)
+                return (
+                  <div key={idx} className="admin-cotizacion-item-row">
+                    <select
+                      value={item.productId}
+                      onChange={(e) => {
+                        const next = [...form.items]
+                        const p = products.find((x) => String(x.id) === e.target.value)
+                        next[idx] = {
+                          ...next[idx],
+                          productId: e.target.value,
+                          unitPrice: p?.price || next[idx].unitPrice || 0,
+                        }
+                        setForm({ ...form, items: next })
+                      }}
+                    >
+                      <option value="">Seleccionar…</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number" min="1" value={item.qty}
+                      onChange={(e) => {
+                        const next = [...form.items]
+                        next[idx] = { ...next[idx], qty: Number(e.target.value) }
+                        setForm({ ...form, items: next })
+                      }}
+                    />
+                    <input
+                      type="number" min="0" step="0.01" value={item.unitPrice}
+                      onChange={(e) => {
+                        const next = [...form.items]
+                        next[idx] = { ...next[idx], unitPrice: Number(e.target.value) }
+                        setForm({ ...form, items: next })
+                      }}
+                    />
+                    <strong>{formatCurrency(lineSub)}</strong>
+                    <button
+                      type="button"
+                      className="admin-action-btn danger"
+                      onClick={() => {
+                        const next = form.items.filter((_, i) => i !== idx)
+                        setForm({ ...form, items: next.length ? next : [{ productId: '', qty: 1, unitPrice: 0 }] })
+                      }}
+                      disabled={form.items.length === 1}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+              <button
+                type="button"
+                className="admin-action-btn neutral"
+                onClick={() => setForm({ ...form, items: [...form.items, { productId: '', qty: 1, unitPrice: 0 }] })}
+              >
+                + Agregar línea
+              </button>
+            </div>
+
+            <div className="admin-cotizacion-form-row">
+              <label className="field">
+                <span>Descuento ($)</span>
+                <input
+                  type="number" min="0" step="0.01" value={form.descuento}
+                  onChange={(e) => setForm({ ...form, descuento: Number(e.target.value) })}
+                />
+              </label>
+              <label className="field" style={{ gridColumn: 'span 2' }}>
+                <span>Notas (opcional)</span>
+                <textarea
+                  rows="2" value={form.notas}
+                  onChange={(e) => setForm({ ...form, notas: e.target.value })}
+                  placeholder="Condiciones, plazo de entrega, observaciones…"
+                />
+              </label>
+            </div>
+
+            <div className="admin-cotizacion-totals">
+              <div><span>Subtotal</span><strong>{formatCurrency(formSubtotal)}</strong></div>
+              {Number(form.descuento) > 0 && (
+                <div><span>Descuento</span><strong>-{formatCurrency(form.descuento)}</strong></div>
+              )}
+              <div className="total"><span>Total</span><strong>{formatCurrency(formTotal)}</strong></div>
+            </div>
+
+            <div className="admin-cotizacion-form-actions">
+              <button type="button" className="admin-action-btn neutral" onClick={resetForm}>
+                Cancelar
+              </button>
+              <button type="submit" className="admin-primary-btn">
+                {editing ? 'Actualizar' : 'Crear cotización'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {loading ? (
+          <div className="admin-empty-row">Cargando cotizaciones…</div>
+        ) : filteredCotizaciones.length === 0 ? (
+          <div className="admin-empty-state">
+            <p>No hay cotizaciones {filtroEstado !== 'todos' ? `en estado "${filtroEstado}"` : 'todavía'}.</p>
+            <small>Las cotizaciones te permiten armar propuestas comerciales antes de generar un pedido formal.</small>
+          </div>
+        ) : (
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head admin-cotizaciones-grid">
+              <span>N°</span>
+              <span>Cliente</span>
+              <span>Fecha</span>
+              <span>Vence</span>
+              <span>Total</span>
+              <span>Estado</span>
+              <span>Acciones</span>
+            </div>
+            {filteredCotizaciones.map((c) => {
+              const estado = COTIZACION_ESTADOS.find((e) => e.id === c.estado) || COTIZACION_ESTADOS[0]
+              const datos = c.datos_cliente || {}
+              return (
+                <div key={c.id} className="admin-table-row admin-cotizaciones-grid">
+                  <strong>{c.numero}</strong>
+                  <div>
+                    <strong>{datos.businessName || `Cliente ${c.client_json_id}`}</strong>
+                    {datos.taxId ? <small>{datos.taxId}</small> : null}
+                  </div>
+                  <span>{c.fecha?.slice(0, 10)}</span>
+                  <span>{c.vencimiento?.slice(0, 10)}</span>
+                  <strong>{formatCurrency(c.total)}</strong>
+                  <select
+                    className={`admin-pill ${estado.tone}`}
+                    style={{ border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                    value={c.estado}
+                    onChange={(e) => handleChangeEstado(c.id, e.target.value)}
+                    disabled={c.estado === 'convertida'}
+                  >
+                    {COTIZACION_ESTADOS.map((e) => (
+                      <option key={e.id} value={e.id}>{e.label}</option>
+                    ))}
+                  </select>
+                  <div style={{ display: 'flex', gap: '0.3rem' }}>
+                    <button type="button" className="admin-action-btn neutral" onClick={() => handlePrint(c)}>PDF</button>
+                    <button type="button" className="admin-action-btn neutral" onClick={() => handleEdit(c)}>Editar</button>
+                    <button type="button" className="admin-action-btn danger" onClick={() => handleDelete(c.id)}>×</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
 export function AdminDashboard() {
   const { session, logout } = useAuth()
   const {
@@ -3578,6 +4245,37 @@ export function AdminDashboard() {
 
     return items
   }, [clientsWithTier, lowStockItems, ordersWithClient])
+
+  const globalAlerts = useMemo(() => {
+    const alerts = []
+    const pendingCount = ordersWithClient.filter((o) => o.status === 'Pendiente').length
+    if (pendingCount > 0) {
+      alerts.push({
+        kind: 'Pedidos',
+        tone: 'warning',
+        text: `${pendingCount} pedido${pendingCount === 1 ? '' : 's'} pendiente${pendingCount === 1 ? '' : 's'} de aprobación`,
+        action: () => navigateToSection('pedidos'),
+      })
+    }
+    if (lowStockItems.length > 0) {
+      alerts.push({
+        kind: 'Stock',
+        tone: 'danger',
+        text: `${lowStockItems.length} producto${lowStockItems.length === 1 ? '' : 's'} con stock crítico`,
+        action: () => navigateToSection('stock'),
+      })
+    }
+    const debtors = clientsWithTier.filter((c) => Number(c.pendingBalance) > 0).length
+    if (debtors > 0) {
+      alerts.push({
+        kind: 'Cobranzas',
+        tone: 'info',
+        text: `${debtors} cliente${debtors === 1 ? '' : 's'} con saldo pendiente`,
+        action: () => navigateToSection('cobranzas'),
+      })
+    }
+    return alerts
+  }, [ordersWithClient, lowStockItems, clientsWithTier])
 
   const chatConversations = useMemo(
     () =>
@@ -4265,6 +4963,18 @@ export function AdminDashboard() {
         </aside>
 
         <section className="admin-main">
+          <AdminGlobalTopbar
+            session={session}
+            clients={clients}
+            products={products}
+            orders={orders}
+            alerts={globalAlerts}
+            onLogout={logout}
+            onNavigate={(sectionId, opts) => {
+              navigateToSection(sectionId)
+              if (opts?.clientId) setSelectedClientId(opts.clientId)
+            }}
+          />
           <header className="admin-topbar">
             <button
               type="button"
@@ -4361,15 +5071,15 @@ export function AdminDashboard() {
         <section className="admin-content">
           {activeSection === 'dashboard' ? (
             <section className="admin-section">
-              <div className="admin-metrics-grid">
+              <div className="admin-hero-grid">
                 {metrics.map((metric) => (
-                  <MetricCard key={metric.title} {...metric} />
+                  <HeroMetricCard key={metric.title} {...metric} />
                 ))}
               </div>
 
-              <div className="admin-metrics-grid">
+              <div className="admin-secondary-grid">
                 {dashboardExtraMetrics.map((metric) => (
-                  <MetricCard key={metric.title} {...metric} />
+                  <SecondaryMetricCard key={metric.title} {...metric} />
                 ))}
               </div>
 
@@ -4897,6 +5607,10 @@ export function AdminDashboard() {
           ) : null}
 
           {activeSection === 'promociones' ? <PromocionesSection /> : null}
+
+          {activeSection === 'cotizaciones' ? (
+            <CotizacionesSection clients={clients} products={products} />
+          ) : null}
 
           {activeSection === 'pedidos' ? (
             <section className="admin-section">

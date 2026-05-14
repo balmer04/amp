@@ -179,6 +179,26 @@ async function initDB() {
       codigo_postal VARCHAR(20),
       predeterminada BOOLEAN DEFAULT false
     );
+    CREATE TABLE IF NOT EXISTS cotizaciones (
+      id SERIAL PRIMARY KEY,
+      numero VARCHAR(20) UNIQUE NOT NULL,
+      client_json_id INTEGER NOT NULL,
+      fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+      vencimiento DATE NOT NULL,
+      estado VARCHAR(20) DEFAULT 'borrador',
+      subtotal NUMERIC(12,2) DEFAULT 0,
+      descuento NUMERIC(12,2) DEFAULT 0,
+      total NUMERIC(12,2) DEFAULT 0,
+      items JSONB DEFAULT '[]'::jsonb,
+      datos_cliente JSONB,
+      notas TEXT,
+      pedido_json_id VARCHAR(100),
+      creado_por INTEGER REFERENCES users(id),
+      creado_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_cotizaciones_estado ON cotizaciones(estado);
+    CREATE INDEX IF NOT EXISTS idx_cotizaciones_cliente ON cotizaciones(client_json_id);
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT 'admin'`);
@@ -1877,6 +1897,154 @@ app.put('/api/admin/facturas/:id/anular', authenticateToken, requireAdmin, async
     );
     if (!rows[0]) return res.status(404).json({ ok: false, message: 'Factura no encontrada.' });
     res.json({ ok: true, factura: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// ── COTIZACIONES (Quotes) ─────────────────────────────────────────────────────
+app.get('/api/admin/cotizaciones', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { estado } = req.query;
+    let query = 'SELECT * FROM cotizaciones';
+    const params = [];
+    if (estado) {
+      query += ' WHERE estado = $1';
+      params.push(estado);
+    }
+    query += ' ORDER BY creado_at DESC LIMIT 200';
+    const { rows } = await pool.query(query, params);
+    res.json({ ok: true, cotizaciones: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/admin/cotizaciones', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const {
+      client_json_id, vencimiento, items, subtotal, descuento, total,
+      datos_cliente, notas, estado,
+    } = req.body;
+
+    if (!client_json_id || !items || !Array.isArray(items)) {
+      return res.status(400).json({ ok: false, message: 'Cliente e items son requeridos.' });
+    }
+
+    // Auto-numbering: COT-YYYY-NNNN
+    const year = new Date().getFullYear();
+    const { rows: countRows } = await pool.query(
+      "SELECT COUNT(*) FROM cotizaciones WHERE numero LIKE $1",
+      [`COT-${year}-%`]
+    );
+    const seq = (parseInt(countRows[0].count, 10) + 1).toString().padStart(4, '0');
+    const numero = `COT-${year}-${seq}`;
+
+    // Default vencimiento: +15 days from today
+    const vencDate = vencimiento || (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 15);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    const { rows } = await pool.query(
+      `INSERT INTO cotizaciones
+       (numero, client_json_id, vencimiento, estado, subtotal, descuento, total, items, datos_cliente, notas, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        numero,
+        client_json_id,
+        vencDate,
+        estado || 'borrador',
+        subtotal || 0,
+        descuento || 0,
+        total || 0,
+        JSON.stringify(items),
+        datos_cliente ? JSON.stringify(datos_cliente) : null,
+        notas || null,
+        req.user.id,
+      ]
+    );
+    res.json({ ok: true, cotizacion: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.get('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { rows } = await pool.query('SELECT * FROM cotizaciones WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Cotización no encontrada.' });
+    res.json({ ok: true, cotizacion: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.put('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const {
+      vencimiento, estado, items, subtotal, descuento, total, notas,
+    } = req.body;
+
+    const sets = [];
+    const params = [];
+    let i = 1;
+
+    if (vencimiento !== undefined) { sets.push(`vencimiento = $${i++}`); params.push(vencimiento); }
+    if (estado !== undefined) { sets.push(`estado = $${i++}`); params.push(estado); }
+    if (items !== undefined) { sets.push(`items = $${i++}`); params.push(JSON.stringify(items)); }
+    if (subtotal !== undefined) { sets.push(`subtotal = $${i++}`); params.push(subtotal); }
+    if (descuento !== undefined) { sets.push(`descuento = $${i++}`); params.push(descuento); }
+    if (total !== undefined) { sets.push(`total = $${i++}`); params.push(total); }
+    if (notas !== undefined) { sets.push(`notas = $${i++}`); params.push(notas); }
+    sets.push(`updated_at = NOW()`);
+
+    if (sets.length === 1) {
+      return res.status(400).json({ ok: false, message: 'Nada para actualizar.' });
+    }
+
+    params.push(req.params.id);
+    const { rows } = await pool.query(
+      `UPDATE cotizaciones SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`,
+      params
+    );
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Cotización no encontrada.' });
+    res.json({ ok: true, cotizacion: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.delete('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { rowCount } = await pool.query('DELETE FROM cotizaciones WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) return res.status(404).json({ ok: false, message: 'Cotización no encontrada.' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+// Convertir cotización en pedido (graba el orderId en la cotización y marca como convertida)
+app.post('/api/admin/cotizaciones/:id/convertir', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const { pedidoId } = req.body;
+    if (!pedidoId) return res.status(400).json({ ok: false, message: 'pedidoId requerido.' });
+    const { rows } = await pool.query(
+      `UPDATE cotizaciones SET estado = 'convertida', pedido_json_id = $1, updated_at = NOW()
+       WHERE id = $2 RETURNING *`,
+      [pedidoId, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ ok: false, message: 'Cotización no encontrada.' });
+    res.json({ ok: true, cotizacion: rows[0] });
   } catch (e) {
     res.status(500).json({ ok: false, message: e.message });
   }
