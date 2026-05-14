@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-const quickAccessUsers = import.meta.env.DEV
-  ? {
-      client: { email: 'cliente@amprev.com', password: 'cliente123' },
-      admin: { email: 'admin@amprev.com', password: 'admin123' },
-    }
-  : null
+// TODO: ocultar en producción real una vez salida la demo
+const quickAccessUsers = {
+  client: { email: 'cliente@amprev.com', password: 'cliente123' },
+  admin: { email: 'admin@amprev.com', password: 'admin123' },
+}
 
 export function LoginPage() {
   const { session, login, register, isAuthenticated, isRefreshing } = useAuth()
@@ -159,23 +158,23 @@ export function LoginPage() {
 
           {quickAccessUsers && (
             <div className="login-footer">
-              <p>Proba las vistas del mockup</p>
+              <p>Acceso rápido de demo</p>
               <div className="quick-actions">
-                <button
-                  type="button"
-                  className="pill-button"
-                  onClick={() => handleQuickAccess('client')}
-                  disabled={isSubmitting || isRefreshing}
-                >
-                  Ver como cliente
-                </button>
                 <button
                   type="button"
                   className="pill-button"
                   onClick={() => handleQuickAccess('admin')}
                   disabled={isSubmitting || isRefreshing}
                 >
-                  Ver como admin
+                  Entrar como admin →
+                </button>
+                <button
+                  type="button"
+                  className="pill-button"
+                  onClick={() => handleQuickAccess('client')}
+                  disabled={isSubmitting || isRefreshing}
+                >
+                  Entrar como cliente →
                 </button>
               </div>
             </div>
