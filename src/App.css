@@ -470,12 +470,17 @@
   height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  gap: 1rem;
-  padding: 1.4rem 1.2rem;
-  background: linear-gradient(180deg, #0e0e10 0%, #161618 60%, #0e0e10 100%);
+  gap: 1.4rem;
+  padding: 1.5rem 0.9rem;
+  background: linear-gradient(180deg, #0c0c0e 0%, #131316 60%, #0c0c0e 100%);
   border-right: 1px solid rgba(255,255,255,0.06);
   color: #ffffff;
+  overflow-y: auto;
 }
+
+.admin-sidebar::-webkit-scrollbar { width: 6px; }
+.admin-sidebar::-webkit-scrollbar-track { background: transparent; }
+.admin-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
 
 .admin-sidebar-logo {
   width: min(7.6rem, 100%);
@@ -483,26 +488,30 @@
 }
 
 .admin-sidebar-wordmark {
-  font-size: 1.55rem;
+  font-size: 1.4rem;
   font-weight: 800;
   letter-spacing: -0.04em;
   color: #ffffff;
   line-height: 1;
+  padding-inline: 0.3rem;
 }
 
 .admin-sidebar-brand {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.6rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
 .admin-sidebar-brand-meta {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  color: rgba(255, 255, 255, 0.7);
+  gap: 0.4rem;
+  color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+  padding-inline: 0.3rem;
 }
 
 .admin-sidebar-status-dot {
@@ -514,48 +523,49 @@
 
 .admin-sidebar-nav {
   display: grid;
-  gap: 1rem;
+  gap: 0.9rem;
   align-content: start;
   grid-auto-rows: min-content;
 }
 
 .admin-sidebar-group {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.18rem;
 }
 
 .admin-sidebar-group-title {
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(255, 255, 255, 0.32);
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 0.72rem;
-  padding-inline: 0.15rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 0.15rem 0.6rem 0.4rem;
 }
 
 .admin-sidebar-group-links {
   display: grid;
-  gap: 0.3rem;
+  gap: 0.12rem;
 }
 
 .admin-sidebar-link {
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.72);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   text-align: left;
-  padding: 0.62rem 0.75rem;
-  border-radius: 0.35rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 0.45rem;
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    color 0.18s ease,
-    transform 0.18s ease;
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .admin-sidebar-link-main {
@@ -584,13 +594,14 @@
 }
 
 .admin-sidebar-link:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
   color: #ffffff;
 }
 
 .admin-sidebar-link.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
+  font-weight: 600;
   border-color: rgba(255, 255, 255, 0.14);
 }
 
@@ -6751,3 +6762,188 @@
     border-bottom: none;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   NEXO · Admin redesign — Cobranzas, Reportes, Promociones, design polish
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* — Segmented control (período en Reportes) — */
+.admin-segmented {
+  display: inline-flex;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.5rem;
+  padding: 3px;
+  gap: 2px;
+}
+.admin-segmented button {
+  border: none;
+  background: transparent;
+  color: #52525b;
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.admin-segmented button:hover { color: #18181b; }
+.admin-segmented button.active {
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* — Cobranzas grid — */
+.admin-cobranzas-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 90px 110px auto;
+  gap: 0.9rem;
+  align-items: center;
+}
+.admin-cobranzas-grid > div small,
+.admin-cobranzas-grid > strong + small {
+  display: block;
+  color: #71717a;
+  font-size: 0.78rem;
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+/* — Reportes grid — */
+.admin-reportes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 1100px) {
+  .admin-reportes-grid { grid-template-columns: 1fr; }
+}
+.admin-reportes-products-grid {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 2fr) 80px minmax(0, 1.1fr);
+  gap: 0.8rem;
+  align-items: center;
+}
+.admin-reportes-clients-grid {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 2fr) 70px minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: center;
+}
+.admin-reportes-products-grid small {
+  display: block;
+  color: #71717a;
+  font-size: 0.76rem;
+  margin-top: 2px;
+  font-weight: 400;
+}
+.admin-rank {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  background: #18181b;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* — Promociones — */
+.admin-promo-form {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.9rem;
+  padding: 1.2rem;
+  background: #fafafa;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.6rem;
+  margin: 0.4rem 0 1.2rem;
+}
+.admin-promo-form .field { display: grid; gap: 0.35rem; }
+.admin-promo-form .field span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #71717a;
+  font-weight: 700;
+}
+.admin-promo-form input,
+.admin-promo-form select {
+  border: 1px solid #d4d4d8;
+  border-radius: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  background: #fff;
+  color: #18181b;
+}
+.admin-promo-form input:focus,
+.admin-promo-form select:focus {
+  outline: none;
+  border-color: #3f3f46;
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+}
+.admin-promo-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+.admin-promos-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 130px minmax(0, 1fr) minmax(0, 1.2fr) 90px 110px;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+@media (max-width: 1000px) {
+  .admin-promo-form { grid-template-columns: 1fr 1fr; }
+  .admin-promos-grid { grid-template-columns: 1fr; gap: 0.4rem; }
+}
+
+/* — Empty states elegantes — */
+.admin-empty-state {
+  padding: 2.4rem 1.5rem;
+  text-align: center;
+  color: #71717a;
+}
+.admin-empty-state p {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3f3f46;
+}
+.admin-empty-state small {
+  color: #71717a;
+  font-size: 0.85rem;
+}
+.admin-empty-row {
+  padding: 1.2rem;
+  text-align: center;
+  color: #a1a1aa;
+  font-size: 0.88rem;
+  font-style: italic;
+}
+
+/* — Pill statuses — */
+.admin-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  cursor: default;
+  white-space: nowrap;
+}
+.admin-pill.neutral  { background: #f4f4f5; color: #52525b; border-color: #e4e4e7; }
+.admin-pill.info     { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.admin-pill.success  { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.admin-pill.warning  { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.admin-pill.danger   { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+button.admin-pill { cursor: pointer; }
+button.admin-pill:hover { filter: brightness(0.96); }
+

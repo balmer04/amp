@@ -18,24 +18,39 @@ import {
 } from '../lib/businessLogic'
 
 const adminSections = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'clientes', label: 'Gestion de Clientes' },
-  { id: 'chats', label: 'Chats' },
-  { id: 'ia', label: 'IA' },
-  { id: 'pedidos', label: 'Pedidos Entrantes' },
-  { id: 'stock', label: 'Control de Stock' },
+  { id: 'dashboard', label: 'Inicio' },
+  { id: 'pedidos', label: 'Pedidos' },
   { id: 'facturacion', label: 'Facturación' },
-  { id: 'fidelizacion', label: 'Sistema de Puntos/Niveles' },
-  { id: 'configuracion', label: 'Configuracion' },
+  { id: 'promociones', label: 'Promociones' },
+  { id: 'clientes', label: 'Clientes' },
+  { id: 'cobranzas', label: 'Cobranzas' },
+  { id: 'chats', label: 'Chats' },
+  { id: 'stock', label: 'Productos y stock' },
+  { id: 'reportes', label: 'Reportes' },
+  { id: 'ia', label: 'Asistente IA' },
+  { id: 'fidelizacion', label: 'Fidelización' },
+  { id: 'configuracion', label: 'Configuración' },
 ]
 const adminSectionGroups = [
   {
-    title: 'Principal',
-    items: ['dashboard', 'clientes', 'chats', 'ia'],
+    title: 'Inicio',
+    items: ['dashboard'],
   },
   {
-    title: 'Operaciones',
-    items: ['pedidos', 'stock', 'facturacion'],
+    title: 'Ventas',
+    items: ['pedidos', 'facturacion', 'promociones'],
+  },
+  {
+    title: 'Clientes',
+    items: ['clientes', 'cobranzas', 'chats'],
+  },
+  {
+    title: 'Catálogo',
+    items: ['stock'],
+  },
+  {
+    title: 'Inteligencia',
+    items: ['reportes', 'ia'],
   },
   {
     title: 'Sistema',
@@ -106,6 +121,26 @@ function AdminSidebarIcon({ sectionId }) {
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="2.8" />
           <path d="M12 4v2.1M12 17.9V20M4 12h2.1M17.9 12H20M6.3 6.3l1.5 1.5M16.2 16.2l1.5 1.5M17.7 6.3l-1.5 1.5M7.8 16.2l-1.5 1.5" />
+        </svg>
+      )
+    case 'reportes':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6" />
+        </svg>
+      )
+    case 'cobranzas':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="6" width="18" height="13" rx="1.5" />
+          <path d="M3 10h18M7 15h3" />
+        </svg>
+      )
+    case 'promociones':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 12 12 4l8 8-8 8z" />
+          <circle cx="9" cy="9" r="1.2" />
         </svg>
       )
     default:
@@ -2582,6 +2617,496 @@ function ProductImportModal({ isOpen, onClose, existingProducts, onImport }) {
   )
 }
 
+// ─── Cobranzas: vista dedicada de cuentas por cobrar con aging buckets ─────
+function CobranzasSection({ clients, orders, onOpenClient }) {
+  const data = useMemo(() => {
+    const debtors = clients.filter((c) => Number(c.pendingBalance || 0) > 0)
+    const now = Date.now()
+    const dayMs = 24 * 60 * 60 * 1000
+
+    const lastOrderByClient = new Map()
+    orders.forEach((o) => {
+      const prev = lastOrderByClient.get(o.clientId)
+      const ts = new Date(o.createdAt).getTime()
+      if (!prev || ts > prev) lastOrderByClient.set(o.clientId, ts)
+    })
+
+    const buckets = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 }
+    const debtorsWithAging = debtors.map((c) => {
+      const lastTs = lastOrderByClient.get(c.id) || new Date(c.createdAt).getTime()
+      const days = Math.floor((now - lastTs) / dayMs)
+      const amount = Number(c.pendingBalance || 0)
+      let bucket
+      if (days <= 30) bucket = '0-30'
+      else if (days <= 60) bucket = '31-60'
+      else if (days <= 90) bucket = '61-90'
+      else bucket = '90+'
+      buckets[bucket] += amount
+      return { ...c, daysSinceLastOrder: days, bucket, debtAmount: amount }
+    })
+
+    const total = Object.values(buckets).reduce((a, b) => a + b, 0)
+    debtorsWithAging.sort((a, b) => b.debtAmount - a.debtAmount)
+
+    return { debtors: debtorsWithAging, buckets, total }
+  }, [clients, orders])
+
+  return (
+    <section className="admin-section">
+      <div className="admin-metrics-grid">
+        <MetricCard
+          title="Deuda total"
+          value={formatCurrency(data.total)}
+          detail={`${data.debtors.length} clientes con saldo`}
+          tone={data.total > 0 ? 'red' : 'slate'}
+        />
+        <MetricCard
+          title="0–30 días"
+          value={formatCurrency(data.buckets['0-30'])}
+          detail="Reciente, riesgo bajo"
+          tone="slate"
+        />
+        <MetricCard
+          title="31–60 días"
+          value={formatCurrency(data.buckets['31-60'])}
+          detail="Atención comercial"
+          tone="blue"
+        />
+        <MetricCard
+          title="61–90 días"
+          value={formatCurrency(data.buckets['61-90'])}
+          detail="Riesgo medio"
+          tone="navy"
+        />
+        <MetricCard
+          title="90+ días"
+          value={formatCurrency(data.buckets['90+'])}
+          detail="Riesgo alto"
+          tone={data.buckets['90+'] > 0 ? 'red' : 'slate'}
+        />
+      </div>
+
+      <article className="admin-card">
+        <div className="admin-section-header">
+          <div>
+            <span className="admin-card-eyebrow">Cuentas por cobrar</span>
+            <h2>Ranking de deudores</h2>
+          </div>
+        </div>
+
+        {data.debtors.length === 0 ? (
+          <div className="admin-all-clear">Sin saldos pendientes ✓</div>
+        ) : (
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head admin-cobranzas-grid">
+              <span>Cliente</span>
+              <span>Saldo</span>
+              <span>% Límite</span>
+              <span>Aging</span>
+              <span></span>
+            </div>
+            {data.debtors.slice(0, 30).map((c) => {
+              const usage = c.creditLimit > 0
+                ? Math.round((c.debtAmount / c.creditLimit) * 100)
+                : 0
+              const agingTone =
+                c.bucket === '90+' ? 'danger'
+                : c.bucket === '61-90' ? 'warning'
+                : c.bucket === '31-60' ? 'info'
+                : 'neutral'
+              return (
+                <div key={c.id} className="admin-table-row admin-cobranzas-grid">
+                  <div>
+                    <strong>{c.businessName}</strong>
+                    <small>{c.taxId || c.email}</small>
+                  </div>
+                  <strong>{formatCurrency(c.debtAmount)}</strong>
+                  <span className={usage > 80 ? 'admin-pill danger' : 'admin-pill neutral'}>
+                    {usage}%
+                  </span>
+                  <span className={`admin-pill ${agingTone}`}>{c.bucket} días</span>
+                  <button
+                    type="button"
+                    className="admin-action-btn neutral"
+                    onClick={() => onOpenClient(c.id)}
+                  >
+                    Abrir cliente
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
+// ─── Reportes: análisis profundo de ventas, productos y clientes ───────────
+function ReportesSection({ orders, products, clients, ordersWithClient }) {
+  const [periodo, setPeriodo] = useState(30)
+
+  const data = useMemo(() => {
+    const cutoff = Date.now() - periodo * 24 * 60 * 60 * 1000
+    const ordersInPeriod = ordersWithClient.filter(
+      (o) => new Date(o.createdAt).getTime() >= cutoff,
+    )
+
+    // Top productos
+    const productMap = new Map()
+    ordersInPeriod.forEach((o) => {
+      ;(o.items || []).forEach((item) => {
+        const cur = productMap.get(item.productId) || { units: 0, revenue: 0 }
+        cur.units += Number(item.qty) || 0
+        cur.revenue += (Number(item.qty) || 0) * (Number(item.unitPrice) || 0)
+        productMap.set(item.productId, cur)
+      })
+    })
+    const topProducts = [...productMap.entries()]
+      .map(([pid, v]) => {
+        const p = products.find((x) => x.id === pid)
+        return { id: pid, name: p?.name || `Producto ${pid}`, sku: p?.sku || '—', ...v }
+      })
+      .sort((a, b) => b.units - a.units)
+      .slice(0, 10)
+
+    // Top clientes
+    const clientMap = new Map()
+    ordersInPeriod.forEach((o) => {
+      const cur = clientMap.get(o.clientId) || { revenue: 0, orders: 0 }
+      cur.revenue += Number(o.total) || 0
+      cur.orders += 1
+      clientMap.set(o.clientId, cur)
+    })
+    const topClients = [...clientMap.entries()]
+      .map(([cid, v]) => {
+        const c = clients.find((x) => x.id === cid)
+        return { id: cid, name: c?.businessName || 'Desconocido', ...v }
+      })
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10)
+
+    // Totales
+    const revenue = ordersInPeriod.reduce((s, o) => s + (Number(o.total) || 0), 0)
+    const avgTicket = ordersInPeriod.length > 0 ? Math.round(revenue / ordersInPeriod.length) : 0
+    const uniqueClients = new Set(ordersInPeriod.map((o) => o.clientId)).size
+
+    return {
+      ordersInPeriod,
+      topProducts,
+      topClients,
+      revenue,
+      avgTicket,
+      uniqueClients,
+      orderCount: ordersInPeriod.length,
+    }
+  }, [ordersWithClient, products, clients, periodo])
+
+  return (
+    <section className="admin-section">
+      <article className="admin-card">
+        <div className="admin-section-header">
+          <div>
+            <span className="admin-card-eyebrow">Período de análisis</span>
+            <h2>Reportes de venta</h2>
+          </div>
+          <div className="admin-segmented">
+            {[7, 30, 90, 180].map((d) => (
+              <button
+                key={d}
+                type="button"
+                className={periodo === d ? 'active' : ''}
+                onClick={() => setPeriodo(d)}
+              >
+                {d} días
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="admin-metrics-grid">
+          <MetricCard
+            title="Facturación"
+            value={formatCurrency(data.revenue)}
+            detail={`${data.orderCount} pedidos`}
+            tone="blue"
+          />
+          <MetricCard
+            title="Ticket promedio"
+            value={formatCurrency(data.avgTicket)}
+            detail="Promedio por pedido"
+            tone="navy"
+          />
+          <MetricCard
+            title="Clientes activos"
+            value={String(data.uniqueClients)}
+            detail="Con al menos un pedido"
+            tone="slate"
+          />
+          <MetricCard
+            title="Frecuencia"
+            value={data.uniqueClients > 0 ? (data.orderCount / data.uniqueClients).toFixed(1) : '0'}
+            detail="Pedidos por cliente"
+            tone="slate"
+          />
+        </div>
+      </article>
+
+      <div className="admin-reportes-grid">
+        <article className="admin-card">
+          <div className="admin-section-header">
+            <div>
+              <span className="admin-card-eyebrow">Productos</span>
+              <h2>Top 10 más vendidos</h2>
+            </div>
+          </div>
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head admin-reportes-products-grid">
+              <span>#</span>
+              <span>Producto</span>
+              <span>Unidades</span>
+              <span>Facturado</span>
+            </div>
+            {data.topProducts.length === 0 ? (
+              <div className="admin-empty-row">Sin ventas en el período</div>
+            ) : (
+              data.topProducts.map((p, i) => (
+                <div key={p.id} className="admin-table-row admin-reportes-products-grid">
+                  <span className="admin-rank">{i + 1}</span>
+                  <div>
+                    <strong>{p.name}</strong>
+                    <small>{p.sku}</small>
+                  </div>
+                  <strong>{p.units}</strong>
+                  <span>{formatCurrency(p.revenue)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="admin-card">
+          <div className="admin-section-header">
+            <div>
+              <span className="admin-card-eyebrow">Clientes</span>
+              <h2>Top 10 facturación</h2>
+            </div>
+          </div>
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head admin-reportes-clients-grid">
+              <span>#</span>
+              <span>Cliente</span>
+              <span>Pedidos</span>
+              <span>Facturado</span>
+            </div>
+            {data.topClients.length === 0 ? (
+              <div className="admin-empty-row">Sin clientes en el período</div>
+            ) : (
+              data.topClients.map((c, i) => (
+                <div key={c.id} className="admin-table-row admin-reportes-clients-grid">
+                  <span className="admin-rank">{i + 1}</span>
+                  <strong>{c.name}</strong>
+                  <span>{c.orders}</span>
+                  <strong>{formatCurrency(c.revenue)}</strong>
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+      </div>
+    </section>
+  )
+}
+
+// ─── Promociones: CRUD básico de campañas y descuentos ─────────────────────
+const PROMOS_STORAGE_KEY = 'nexo-promociones'
+
+function PromocionesSection() {
+  const [promos, setPromos] = useState([])
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({
+    nombre: '',
+    tipo: 'percent',
+    valor: '',
+    alcance: 'todos',
+    tier: 'Asociado',
+    inicio: new Date().toISOString().slice(0, 10),
+    fin: '',
+    activa: true,
+  })
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(PROMOS_STORAGE_KEY) || '[]')
+      setPromos(stored)
+    } catch { /* noop */ }
+  }, [])
+
+  const save = (next) => {
+    setPromos(next)
+    localStorage.setItem(PROMOS_STORAGE_KEY, JSON.stringify(next))
+  }
+
+  const handleCreate = (e) => {
+    e.preventDefault()
+    if (!form.nombre || !form.valor) return
+    const newPromo = { ...form, id: `PRM-${Date.now()}`, valor: Number(form.valor) }
+    save([newPromo, ...promos])
+    setShowForm(false)
+    setForm({
+      nombre: '', tipo: 'percent', valor: '', alcance: 'todos',
+      tier: 'Asociado', inicio: new Date().toISOString().slice(0, 10), fin: '', activa: true,
+    })
+  }
+
+  const handleToggle = (id) => {
+    save(promos.map((p) => (p.id === id ? { ...p, activa: !p.activa } : p)))
+  }
+
+  const handleDelete = (id) => {
+    if (!window.confirm('¿Eliminar esta promoción?')) return
+    save(promos.filter((p) => p.id !== id))
+  }
+
+  return (
+    <section className="admin-section">
+      <article className="admin-card">
+        <div className="admin-section-header">
+          <div>
+            <span className="admin-card-eyebrow">Campañas y descuentos</span>
+            <h2>Promociones activas</h2>
+          </div>
+          <button
+            type="button"
+            className="admin-primary-btn"
+            onClick={() => setShowForm((v) => !v)}
+          >
+            {showForm ? 'Cancelar' : '+ Nueva promoción'}
+          </button>
+        </div>
+
+        {showForm && (
+          <form className="admin-promo-form" onSubmit={handleCreate}>
+            <label className="field">
+              <span>Nombre</span>
+              <input
+                type="text"
+                value={form.nombre}
+                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                placeholder="Ej: Descuento 10% en látex"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Tipo</span>
+              <select
+                value={form.tipo}
+                onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+              >
+                <option value="percent">Porcentual (%)</option>
+                <option value="fixed">Monto fijo ($)</option>
+                <option value="shipping">Envío gratis</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Valor</span>
+              <input
+                type="number"
+                step="0.01"
+                value={form.valor}
+                onChange={(e) => setForm({ ...form, valor: e.target.value })}
+                disabled={form.tipo === 'shipping'}
+                placeholder={form.tipo === 'percent' ? '10' : '5000'}
+                required={form.tipo !== 'shipping'}
+              />
+            </label>
+            <label className="field">
+              <span>Alcance</span>
+              <select
+                value={form.alcance}
+                onChange={(e) => setForm({ ...form, alcance: e.target.value })}
+              >
+                <option value="todos">Todos los clientes</option>
+                <option value="tier">Por nivel</option>
+              </select>
+            </label>
+            {form.alcance === 'tier' && (
+              <label className="field">
+                <span>Nivel</span>
+                <select
+                  value={form.tier}
+                  onChange={(e) => setForm({ ...form, tier: e.target.value })}
+                >
+                  {TIER_ORDER.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              <span>Desde</span>
+              <input type="date" value={form.inicio} onChange={(e) => setForm({ ...form, inicio: e.target.value })} />
+            </label>
+            <label className="field">
+              <span>Hasta</span>
+              <input type="date" value={form.fin} onChange={(e) => setForm({ ...form, fin: e.target.value })} />
+            </label>
+            <div className="admin-promo-form-actions">
+              <button type="submit" className="admin-primary-btn">Crear promoción</button>
+            </div>
+          </form>
+        )}
+
+        {promos.length === 0 ? (
+          <div className="admin-empty-state">
+            <p>Aún no creaste ninguna promoción.</p>
+            <small>Las promociones te permiten aplicar descuentos automáticos a clientes específicos o por nivel.</small>
+          </div>
+        ) : (
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head admin-promos-grid">
+              <span>Promoción</span>
+              <span>Tipo</span>
+              <span>Alcance</span>
+              <span>Vigencia</span>
+              <span>Estado</span>
+              <span></span>
+            </div>
+            {promos.map((p) => (
+              <div key={p.id} className="admin-table-row admin-promos-grid">
+                <strong>{p.nombre}</strong>
+                <span>
+                  {p.tipo === 'percent' && `${p.valor}% off`}
+                  {p.tipo === 'fixed' && `${formatCurrency(p.valor)} off`}
+                  {p.tipo === 'shipping' && 'Envío gratis'}
+                </span>
+                <span>
+                  {p.alcance === 'todos' ? 'Todos' : `Nivel ${p.tier}`}
+                </span>
+                <small>
+                  {p.inicio}{p.fin ? ` → ${p.fin}` : ''}
+                </small>
+                <button
+                  type="button"
+                  className={`admin-pill ${p.activa ? 'success' : 'neutral'}`}
+                  onClick={() => handleToggle(p.id)}
+                >
+                  {p.activa ? 'Activa' : 'Inactiva'}
+                </button>
+                <button
+                  type="button"
+                  className="admin-action-btn danger"
+                  onClick={() => handleDelete(p.id)}
+                >
+                  Eliminar
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
 export function AdminDashboard() {
   const { session, logout } = useAuth()
   const {
@@ -4350,6 +4875,28 @@ export function AdminDashboard() {
           ) : null}
 
           {activeSection === 'ia' ? <AdminAiSection /> : null}
+
+          {activeSection === 'cobranzas' ? (
+            <CobranzasSection
+              clients={clients}
+              orders={orders}
+              onOpenClient={(id) => {
+                setSelectedClientId(id)
+                setActiveSection('clientes')
+              }}
+            />
+          ) : null}
+
+          {activeSection === 'reportes' ? (
+            <ReportesSection
+              orders={orders}
+              products={products}
+              clients={clients}
+              ordersWithClient={ordersWithClient}
+            />
+          ) : null}
+
+          {activeSection === 'promociones' ? <PromocionesSection /> : null}
 
           {activeSection === 'pedidos' ? (
             <section className="admin-section">
