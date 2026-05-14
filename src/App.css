@@ -464,7 +464,7 @@
 .admin-crm-page {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 17.5rem minmax(0, 1fr);
+  grid-template-columns: 14.5rem minmax(0, 1fr);
   background: #f1f1f3;
 }
 
@@ -474,8 +474,8 @@
   height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  gap: 1.4rem;
-  padding: 1.5rem 0.9rem;
+  gap: 0.85rem;
+  padding: 0.9rem 0.7rem;
   background: linear-gradient(180deg, #0C0D1A 0%, #13141F 60%, #0C0D1A 100%);
   border-right: 1px solid rgba(255,255,255,0.06);
   color: #ffffff;
@@ -492,78 +492,78 @@
 }
 
 .admin-sidebar-wordmark {
-  font-size: 1.4rem;
+  font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: -0.04em;
   color: #ffffff;
   line-height: 1;
-  padding-inline: 0.3rem;
+  padding-inline: 0.25rem;
 }
 
 .admin-sidebar-brand {
   display: grid;
-  gap: 0.6rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  gap: 0.3rem;
+  padding: 0.15rem 0 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
 .admin-sidebar-brand-meta {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  color: rgba(255, 255, 255, 0.5);
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.45);
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-size: 0.68rem;
-  padding-inline: 0.3rem;
+  font-size: 0.6rem;
+  padding-inline: 0.25rem;
 }
 
 .admin-sidebar-status-dot {
-  width: 0.42rem;
-  height: 0.42rem;
+  width: 0.38rem;
+  height: 0.38rem;
   border-radius: 50%;
   background: #1fd36b;
 }
 
 .admin-sidebar-nav {
   display: grid;
-  gap: 0.9rem;
+  gap: 0.5rem;
   align-content: start;
   grid-auto-rows: min-content;
 }
 
 .admin-sidebar-group {
   display: grid;
-  gap: 0.18rem;
+  gap: 0.08rem;
 }
 
 .admin-sidebar-group-title {
-  color: rgba(255, 255, 255, 0.32);
+  color: rgba(255, 255, 255, 0.28);
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  font-size: 0.58rem;
   font-weight: 700;
-  padding: 0.15rem 0.6rem 0.4rem;
+  padding: 0.1rem 0.55rem 0.25rem;
 }
 
 .admin-sidebar-group-links {
   display: grid;
-  gap: 0.12rem;
+  gap: 0.08rem;
 }
 
 .admin-sidebar-link {
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.7);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.55rem;
   text-align: left;
-  padding: 0.55rem 0.6rem;
-  border-radius: 0.45rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.4rem;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: 0.81rem;
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -575,16 +575,16 @@
 .admin-sidebar-link-main {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.5rem;
 }
 
 .admin-sidebar-link-icon {
-  width: 1rem;
-  height: 1rem;
+  width: 0.9rem;
+  height: 0.9rem;
   display: inline-grid;
   place-items: center;
   color: currentColor;
-  opacity: 0.92;
+  opacity: 0.85;
 }
 
 .admin-sidebar-link-icon svg {
@@ -610,56 +610,84 @@
 }
 
 .admin-sidebar-badge {
-  min-width: 1.45rem;
-  height: 1.45rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
   display: inline-grid;
   place-items: center;
-  padding: 0 0.35rem;
+  padding: 0 0.3rem;
   border-radius: 999px;
   background: #6A6A70;
   color: #ffffff;
-  font-size: 0.76rem;
+  font-size: 0.66rem;
   font-weight: 700;
 }
 
 .admin-sidebar-profile {
   display: grid;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
 }
 
 .admin-profile-card {
   display: grid;
-  gap: 0.85rem;
-  padding: 1rem;
-  border-radius: 0.35rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 0.45rem;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
 }
 
 .admin-profile-chip {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.55rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .admin-profile-chip > span,
 .admin-topbar-profile {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 1.65rem;
+  height: 1.65rem;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   font-weight: 700;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.admin-topbar-profile {
+  width: 2.4rem;
+  height: 2.4rem;
+  font-size: inherit;
 }
 
 .admin-profile-chip strong,
 .admin-profile-chip small {
   display: block;
+  line-height: 1.15;
+}
+
+.admin-profile-chip strong {
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
 }
 
 .admin-profile-chip small {
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.66rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 9rem;
 }
 
 .admin-profile-logout,
@@ -671,24 +699,23 @@
 }
 
 .admin-profile-logout {
-  padding: 0.78rem 1rem;
-  border-radius: 0.35rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.4rem;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
-  font-weight: 600;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+  font-size: 0.78rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   transition:
     border-color 0.18s ease,
     color 0.18s ease,
-    background-color 0.18s ease,
-    box-shadow 0.18s ease;
+    background-color 0.18s ease;
 }
 
 .admin-profile-logout:hover {
   background: rgba(214, 33, 40, 0.12);
   color: #ffffff;
-  border-color: rgba(214, 33, 40, 0.48);
-  box-shadow: 0 0 0 1px rgba(214, 33, 40, 0.18) inset;
+  border-color: rgba(214, 33, 40, 0.4);
 }
 
 .admin-main {
