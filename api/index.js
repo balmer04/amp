@@ -2020,3 +2020,4 @@ app.get('/api/client/cuenta-corriente', authenticateToken, async (req, res) => {
 
 export default app;
 
+
