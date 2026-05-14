@@ -720,7 +720,7 @@
 
 .admin-main {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   min-width: 0;
 }
 
@@ -729,13 +729,22 @@
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 1.2rem 1.4rem 0.8rem;
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  background: rgba(244, 246, 250, 0.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(219, 227, 239, 0.9);
+  padding: 0.85rem 1.4rem 0.85rem;
+  background: transparent;
+  border-bottom: 1px solid rgba(219, 227, 239, 0.6);
+}
+
+.admin-topbar h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.admin-topbar .admin-card-eyebrow {
+  font-size: 0.62rem;
+  display: block;
+  margin-bottom: 2px;
 }
 
 .admin-topbar-actions {
