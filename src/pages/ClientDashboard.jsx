@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
 import ChatCliente from '../components/ChatCliente'
+import { NexoftWordmark } from '../components/NexoftLogo'
 import {
   buildOrderRows,
   buildQuantityMap,
@@ -238,7 +239,7 @@ function ClientSidebar({
   return (
     <aside className="client-sidebar">
       <div className="client-sidebar-brand">
-        <div className="client-sidebar-wordmark">Nexo</div>
+        <NexoftWordmark size="md" tone="light" />
         <div className="client-sidebar-brand-meta">
           <span className="client-sidebar-status-dot" aria-hidden="true"></span>
           <small>Portal mayorista</small>
@@ -1783,7 +1784,7 @@ function ClientChatCard({
 
       <div className="client-chat-statusbar">
         <div className="client-chat-identity">
-          <strong>Administración — Nexo</strong>
+          <strong>Administración — Nexoft</strong>
           <span className="client-chat-presence">
             <span className="client-chat-presence-dot"></span>
             En linea

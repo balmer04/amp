@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useAppData } from '../context/AppDataContext'
 import ChatAdmin from '../components/ChatAdmin'
+import { NexoftWordmark } from '../components/NexoftLogo'
 import {
   ORDER_STATUS_OPTIONS,
   PRODUCT_BENEFIT_CATEGORIES,
@@ -3508,7 +3509,7 @@ function CotizacionesSection({ clients, products }) {
       </head><body>
         <div class="header">
           <div>
-            <div class="brand">Nexo</div>
+            <div class="brand">Nexoft</div>
             <small>Plataforma mayorista</small>
           </div>
           <span class="badge">${c.numero}</span>
@@ -4899,7 +4900,7 @@ export function AdminDashboard() {
       <main className="admin-crm-page">
         <aside className={isSidebarOpen ? 'admin-sidebar open' : 'admin-sidebar'}>
           <div className="admin-sidebar-brand">
-            <div className="admin-sidebar-wordmark">Nexo</div>
+            <NexoftWordmark size="md" tone="light" />
             <div className="admin-sidebar-brand-meta">
               <span className="admin-sidebar-status-dot" aria-hidden="true"></span>
               <small>Panel operativo</small>

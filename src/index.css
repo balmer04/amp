@@ -1,29 +1,36 @@
 :root {
   font-family:
-    Inter,
+    'Helvetica Neue',
+    Helvetica,
+    Arial,
     'Segoe UI',
     sans-serif;
   font-size: 14px;
   line-height: 1.5;
   font-weight: 400;
-  color: #18242e;
-  background: #ffffff;
+  color: #0C0D1A;
+  background: #FFFFFF;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Design tokens */
-  --color-brand-blue: #18181b;
-  --color-brand: #18181b;
-  --color-brand-mid: #27272a;
-  --color-brand-muted: #52525b;
+  /* Nexoft design tokens — Manual de Marca v1.0 */
+  --color-brand-blue: #1A1FBE;
+  --color-brand: #1A1FBE;
+  --color-brand-mid: #0E12A0;
+  --color-brand-dark: #0A0E8A;
+  --color-accent: #FFD100;
+  --color-accent-soft: #FFE57A;
+  --color-brand-muted: #6A6A70;
   --color-brand-red: #d62128;
   --color-error: #c0392b;
-  --color-text-primary: #18181b;
-  --color-text-secondary: #52525b;
-  --color-border: #e4e4e7;
-  --color-surface: #f4f4f5;
+  --color-text-primary: #0C0D1A;
+  --color-text-secondary: #6A6A70;
+  --color-border: #E8E9F8;
+  --color-surface: #F4F4F2;
+  --color-surface-soft: #E8E9F8;
+  --color-dark: #0C0D1A;
   --radius-card: 0.6rem;
   --radius-button: 0.4rem;
   --radius-pill: 999px;
