@@ -114,7 +114,7 @@ function AdminSidebarIcon({ sectionId }) {
 }
 
 const CLIENT_STATUS_ORDER = ['Activo', 'Inactivo', 'Bloqueado']
-const MERINO_IMPORT_HEADERS = [
+const PRODUCT_IMPORT_HEADERS = [
   'CODIGO',
   'CODIGO_PRO',
   'DETALLE',
@@ -196,7 +196,7 @@ function normalizeImportedProduct(rawProduct, rowNumber) {
   }
 }
 
-async function parseMerinoExcelFile(file) {
+async function parseProductExcelFile(file) {
   const XLSX = await loadXLSX()
   const buffer = await file.arrayBuffer()
   const workbook = XLSX.read(buffer, { type: 'array' })
@@ -205,7 +205,7 @@ async function parseMerinoExcelFile(file) {
 
   const headerRow = rows[1] ?? []
   const normalizedHeaders = headerRow.map((value) => String(value).trim().toUpperCase())
-  const expectedHeaders = MERINO_IMPORT_HEADERS.map((value) => value.toUpperCase())
+  const expectedHeaders = PRODUCT_IMPORT_HEADERS.map((value) => value.toUpperCase())
   const hasValidHeaders = expectedHeaders.every(
     (header, index) => normalizedHeaders[index] === header,
   )
@@ -1043,9 +1043,7 @@ function ClientDetailModal({
   useEffect(() => {
     if (activeTab === 'cc' && client) {
       setCcLoading(true)
-      const token = localStorage.getItem('amp-reventa-session')
-        ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
-        : null
+      const token = getAuthToken()
       fetch(`/api/admin/cuenta-corriente/${client.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -1064,9 +1062,7 @@ function ClientDetailModal({
   const handleCcSave = () => {
     if (!ccForm.monto || isNaN(parseFloat(ccForm.monto))) return
     setCcSaving(true)
-    const token = localStorage.getItem('amp-reventa-session')
-      ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
-      : null
+    const token = getAuthToken()
     // Para pago: monto negativo (reduce deuda). Para factura/ajuste: positivo.
     const montoFinal = ccForm.tipo === 'pago' || ccForm.tipo === 'nota_credito'
       ? -Math.abs(parseFloat(ccForm.monto))
@@ -2259,8 +2255,8 @@ function ProductImportModal({ isOpen, onClose, existingProducts, onImport }) {
     loadXLSX().then((XLSX) => {
       const workbook = XLSX.utils.book_new()
       const worksheet = XLSX.utils.aoa_to_sheet([
-        ['LISTA DE PRODUCTOS ANDRES MERINO'],
-        MERINO_IMPORT_HEADERS,
+        ['LISTA DE PRODUCTOS'],
+        PRODUCT_IMPORT_HEADERS,
         ['AM-1001', '20600', 'ACONDICIONADOR FIJADOR X 1 L', 'SHERWIN OBRA', 1, 'LT', 6399.14, 0],
         ['AM-1002', '30550', 'LATEX INTERIOR BLANCO', 'ALBA', 20, 'LT', 18400, 0],
       ])
@@ -2277,7 +2273,7 @@ function ProductImportModal({ isOpen, onClose, existingProducts, onImport }) {
       ]
 
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Plantilla')
-      XLSX.writeFile(workbook, 'plantilla-productos-andres-merino.xlsx')
+      XLSX.writeFile(workbook, 'plantilla-productos.xlsx')
     })
   }
 
@@ -2309,7 +2305,7 @@ function ProductImportModal({ isOpen, onClose, existingProducts, onImport }) {
       const result =
         extension === 'json'
           ? await parseProductsJsonFile(file)
-          : await parseMerinoExcelFile(file)
+          : await parseProductExcelFile(file)
       setProcessingProgress(72)
       setParsedRowsCount(result.products.length)
       setParsedProducts(result.products)
@@ -2720,51 +2716,52 @@ export function AdminDashboard() {
   )
 
   const recentClientsCount = useMemo(() => {
-    const now = Date.now()
-    const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
 
     return clients.filter((client) => {
       const createdAt = new Date(client.createdAt).getTime()
-      return Number.isFinite(createdAt) && now - createdAt <= sevenDaysInMs
+      return Number.isFinite(createdAt) && createdAt >= cutoff
     }).length
   }, [clients])
 
   const metrics = useMemo(
-    () => [
-      {
-        title: 'Ventas realizadas',
-        value: formatCurrency(
-          orders.reduce((sum, order) => {
-            const orderMonth = new Date(order.createdAt).getMonth()
-            const currentMonth = new Date().getMonth()
-            return orderMonth === currentMonth ? sum + order.total : sum
-          }, 0),
-        ),
-        detail: 'Facturacion del periodo actual',
-        tone: 'blue',
-      },
-      {
-        title: 'Accion requerida',
-        value: String(
-          orders.filter((order) => ['Pendiente', 'Aprobado', 'Preparando'].includes(order.status))
-            .length,
-        ),
-        detail: 'Pedidos que requieren seguimiento',
-        tone: 'slate',
-      },
-      {
-        title: 'Nuevos clientes',
-        value: String(recentClientsCount),
-        detail: 'Altas en los ultimos 7 dias',
-        tone: 'red',
-      },
-      {
-        title: 'Alertas de stock',
-        value: String(lowStockItems.length),
-        detail: 'Productos con stock critico por debajo de 5 unidades',
-        tone: lowStockItems.length > 0 ? 'red' : 'slate',
-      },
-    ],
+    () => {
+      const cutoff30d = Date.now() - 30 * 24 * 60 * 60 * 1000
+      const revenue30d = orders.reduce((sum, order) => {
+        const createdAt = new Date(order.createdAt).getTime()
+        return createdAt >= cutoff30d ? sum + order.total : sum
+      }, 0)
+
+      return [
+        {
+          title: 'Ventas realizadas',
+          value: formatCurrency(revenue30d),
+          detail: 'Facturacion de los ultimos 30 dias',
+          tone: 'blue',
+        },
+        {
+          title: 'Accion requerida',
+          value: String(
+            orders.filter((order) => ['Pendiente', 'Aprobado', 'Preparando'].includes(order.status))
+              .length,
+          ),
+          detail: 'Pedidos que requieren seguimiento',
+          tone: 'slate',
+        },
+        {
+          title: 'Nuevos clientes',
+          value: String(recentClientsCount),
+          detail: 'Altas en los ultimos 30 dias',
+          tone: 'red',
+        },
+        {
+          title: 'Alertas de stock',
+          value: String(lowStockItems.length),
+          detail: 'Productos con stock critico por debajo de 5 unidades',
+          tone: lowStockItems.length > 0 ? 'red' : 'slate',
+        },
+      ]
+    },
     [lowStockItems.length, orders, recentClientsCount],
   )
 
@@ -2884,25 +2881,25 @@ export function AdminDashboard() {
   }, [filteredStockProducts, stockPage, stockTotalPages])
 
   const orderSummary = useMemo(() => {
-    const today = new Date().toDateString()
-    const todayOrders = ordersWithClient.filter(
-      (order) => new Date(order.createdAt).toDateString() === today,
+    const cutoff7d = Date.now() - 7 * 24 * 60 * 60 * 1000
+    const ordersLast7d = ordersWithClient.filter(
+      (order) => new Date(order.createdAt).getTime() >= cutoff7d,
     )
 
     return {
-      totalToday: todayOrders.length,
-      amountToday: todayOrders.reduce((sum, order) => sum + order.total, 0),
+      totalRecent: ordersLast7d.length,
+      amountRecent: ordersLast7d.reduce((sum, order) => sum + order.total, 0),
       pending: ordersWithClient.filter((order) => order.status === 'Pendiente').length,
-      dispatchedToday: todayOrders.filter((order) => order.status === 'Despachado').length,
+      dispatchedRecent: ordersLast7d.filter((order) => order.status === 'Despachado').length,
     }
   }, [ordersWithClient])
 
   const dashboardExtraMetrics = useMemo(() => {
-    const currentMonth = new Date().getMonth()
-    const monthlyOrders = orders.filter(
-      (order) => new Date(order.createdAt).getMonth() === currentMonth,
+    const cutoff30d = Date.now() - 30 * 24 * 60 * 60 * 1000
+    const ordersLast30d = orders.filter(
+      (order) => new Date(order.createdAt).getTime() >= cutoff30d,
     )
-    const monthlyRevenue = monthlyOrders.reduce((sum, order) => sum + order.total, 0)
+    const revenueLast30d = ordersLast30d.reduce((sum, order) => sum + order.total, 0)
     const pendingReceivables = clients.reduce(
       (sum, client) => sum + (Number(client.pendingBalance) || 0),
       0,
@@ -2924,9 +2921,9 @@ export function AdminDashboard() {
         tone: pendingReceivables > 0 ? 'red' : 'slate',
       },
       {
-        title: 'Despachados hoy',
-        value: String(orderSummary.dispatchedToday),
-        detail: 'Pedidos enviados en la jornada',
+        title: 'Despachados (7 dias)',
+        value: String(orderSummary.dispatchedRecent),
+        detail: 'Pedidos enviados en la semana',
         tone: 'blue',
       },
       {
@@ -2938,13 +2935,13 @@ export function AdminDashboard() {
       {
         title: 'Ticket promedio',
         value: formatCurrency(
-          monthlyOrders.length > 0 ? Math.round(monthlyRevenue / monthlyOrders.length) : 0,
+          ordersLast30d.length > 0 ? Math.round(revenueLast30d / ordersLast30d.length) : 0,
         ),
-        detail: 'Ventas del mes / cantidad de pedidos',
+        detail: 'Promedio en los ultimos 30 dias',
         tone: 'navy',
       },
     ]
-  }, [clients, clientsWithTier, orderSummary.dispatchedToday, orders])
+  }, [clients, clientsWithTier, orderSummary.dispatchedRecent, orders])
 
   const salesLast7Days = useMemo(() => {
     const today = new Date()
@@ -2976,36 +2973,20 @@ export function AdminDashboard() {
     return days
   }, [orders])
 
-  const ordersByStatus = useMemo(
-    () => [
-      {
-        label: 'Pendiente',
-        value: orders.filter((order) => order.status === 'Pendiente').length,
-        tone: 'neutral',
-      },
-      {
-        label: 'Aprobado',
-        value: orders.filter((order) => order.status === 'Aprobado').length,
-        tone: 'info',
-      },
-      {
-        label: 'Preparando',
-        value: orders.filter((order) => order.status === 'Preparando').length,
-        tone: 'warning',
-      },
-      {
-        label: 'Despachado',
-        value: orders.filter((order) => order.status === 'Despachado').length,
-        tone: 'success',
-      },
-      {
-        label: 'Cancelado',
-        value: orders.filter((order) => order.status === 'Cancelado').length,
-        tone: 'danger',
-      },
-    ],
-    [orders],
-  )
+  const ordersByStatus = useMemo(() => {
+    const counts = orders.reduce((acc, order) => {
+      acc[order.status] = (acc[order.status] || 0) + 1
+      return acc
+    }, {})
+
+    return [
+      { label: 'Pendiente', value: counts.Pendiente || 0, tone: 'neutral' },
+      { label: 'Aprobado', value: counts.Aprobado || 0, tone: 'info' },
+      { label: 'Preparando', value: counts.Preparando || 0, tone: 'warning' },
+      { label: 'Despachado', value: counts.Despachado || 0, tone: 'success' },
+      { label: 'Cancelado', value: counts.Cancelado || 0, tone: 'danger' },
+    ]
+  }, [orders])
 
   const topClientsThisMonth = useMemo(() => {
     const currentMonth = new Date().getMonth()
@@ -5421,9 +5402,7 @@ export function AdminDashboard() {
           onClose={() => setStockAdjustProduct(null)}
           onAdjust={(product, delta, motivo, tipo) => {
             adjustProductStock(product.id, delta, motivo, session.name)
-            const token = localStorage.getItem('amp-reventa-session')
-              ? JSON.parse(localStorage.getItem('amp-reventa-session')).token
-              : null
+            const token = getAuthToken()
             fetch('/api/admin/stock-movimientos', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

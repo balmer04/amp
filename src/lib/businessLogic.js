@@ -119,7 +119,7 @@ export const DEFAULT_CLIENT_PANEL_SETTINGS = {
 }
 
 export const DEFAULT_BRANDING_SETTINGS = {
-  adminDashboardTitle: 'CRM operativo Andres Merino',
+  adminDashboardTitle: 'Panel operativo',
   clientHomeTitle: 'Promociones y oportunidades de la semana',
 }
 
@@ -149,7 +149,7 @@ export const DEFAULT_CLIENTS = [
     paymentHistory: [
       {
         id: 'PAY-1001',
-        date: '2026-03-20T10:00:00-03:00',
+        date: '2026-04-14T10:00:00-03:00',
         amount: 64000,
         method: 'Transferencia',
         reference: 'TRX-238817',
@@ -160,12 +160,12 @@ export const DEFAULT_CLIENTS = [
       {
         id: 'ACT-1001',
         type: 'Llamada',
-        date: '2026-03-26T11:30:00-03:00',
+        date: '2026-04-26T11:30:00-03:00',
         description: 'Se ofrecio promo de latex exterior para obra en curso.',
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Centro',
+    preferredBranch: 'Sucursal Centro',
   },
   {
     id: 2,
@@ -192,7 +192,7 @@ export const DEFAULT_CLIENTS = [
     paymentHistory: [
       {
         id: 'PAY-1002',
-        date: '2026-03-18T09:15:00-03:00',
+        date: '2026-04-12T09:15:00-03:00',
         amount: 128000,
         method: 'Cheque',
         reference: 'CHQ-550192',
@@ -203,12 +203,12 @@ export const DEFAULT_CLIENTS = [
       {
         id: 'ACT-1002',
         type: 'Reunion',
-        date: '2026-03-22T16:00:00-03:00',
+        date: '2026-04-16T16:00:00-03:00',
         description: 'Se revisaron nuevas condiciones comerciales por volumen.',
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Norte',
+    preferredBranch: 'Sucursal Norte',
   },
   {
     id: 3,
@@ -235,7 +235,7 @@ export const DEFAULT_CLIENTS = [
     paymentHistory: [
       {
         id: 'PAY-1003',
-        date: '2026-03-05T14:30:00-03:00',
+        date: '2026-03-25T14:30:00-03:00',
         amount: 96400,
         method: 'Transferencia',
         reference: 'TRX-220981',
@@ -246,12 +246,12 @@ export const DEFAULT_CLIENTS = [
       {
         id: 'ACT-1003',
         type: 'Email',
-        date: '2026-03-24T08:40:00-03:00',
+        date: '2026-04-18T08:40:00-03:00',
         description: 'Se envio seguimiento de documentacion fiscal.',
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Oeste',
+    preferredBranch: 'Sucursal Oeste',
   },
   {
     id: 4,
@@ -278,7 +278,7 @@ export const DEFAULT_CLIENTS = [
     paymentHistory: [
       {
         id: 'PAY-1004',
-        date: '2026-03-12T12:20:00-03:00',
+        date: '2026-04-04T12:20:00-03:00',
         amount: 210000,
         method: 'Transferencia',
         reference: 'TRX-218742',
@@ -294,7 +294,7 @@ export const DEFAULT_CLIENTS = [
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Centro',
+    preferredBranch: 'Sucursal Centro',
   },
   {
     id: 5,
@@ -314,7 +314,7 @@ export const DEFAULT_CLIENTS = [
     city: 'Neuquen',
     province: 'Neuquen',
     status: 'Inactivo',
-    createdAt: '2026-03-05T12:00:00-03:00',
+    createdAt: '2026-03-25T12:00:00-03:00',
     paymentTerms: 'Contado',
     specialDiscount: 0,
     priceList: 'Minorista General',
@@ -323,12 +323,12 @@ export const DEFAULT_CLIENTS = [
       {
         id: 'ACT-1005',
         type: 'Nota',
-        date: '2026-03-25T15:10:00-03:00',
+        date: '2026-04-22T15:10:00-03:00',
         description: 'Hace 45 dias que no compra. Retomar contacto.',
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Sur',
+    preferredBranch: 'Sucursal Sur',
   },
   {
     id: 6,
@@ -371,7 +371,7 @@ export const DEFAULT_CLIENTS = [
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Centro',
+    preferredBranch: 'Sucursal Centro',
   },
   {
     id: 7,
@@ -409,12 +409,12 @@ export const DEFAULT_CLIENTS = [
       {
         id: 'ACT-1007',
         type: 'Llamada',
-        date: '2026-03-27T09:50:00-03:00',
+        date: '2026-04-30T09:50:00-03:00',
         description: 'Se aviso bloqueo preventivo por saldo vencido.',
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Cordoba',
+    preferredBranch: 'Sucursal Córdoba',
   },
   {
     id: 8,
@@ -457,7 +457,7 @@ export const DEFAULT_CLIENTS = [
         user: 'Admin Demo',
       },
     ],
-    preferredBranch: 'Andres Merino Norte',
+    preferredBranch: 'Sucursal Norte',
   },
 ]
 
@@ -564,9 +564,9 @@ export const DEFAULT_ORDERS = [
       { productId: 1, qty: 6 },
       { productId: 5, qty: 8 },
     ],
-    createdAt: '2026-03-30T09:12:00-03:00',
+    createdAt: '2026-05-12T09:12:00-03:00',
     deliveryType: 'Retiro en sucursal',
-    branch: 'Andres Merino Centro',
+    branch: 'Sucursal Centro',
     billingName: 'Ferreteria El Clavo Feliz',
     taxId: '20-32456789-4',
     notes: 'Cliente pidio prioridad para retirar despues de las 16 hs.',
@@ -583,9 +583,9 @@ export const DEFAULT_ORDERS = [
       { productId: 2, qty: 2 },
       { productId: 5, qty: 3 },
     ],
-    createdAt: '2026-03-29T14:20:00-03:00',
+    createdAt: '2026-05-09T14:20:00-03:00',
     deliveryType: 'Envio a obra',
-    branch: 'Andres Merino Centro',
+    branch: 'Sucursal Centro',
     billingName: 'Ferreteria El Clavo Feliz',
     taxId: '20-32456789-4',
     notes: 'Enviar con remito separado para obra 3.',
@@ -599,9 +599,9 @@ export const DEFAULT_ORDERS = [
     status: 'Despachado',
     total: 96400,
     items: [{ productId: 3, qty: 5 }],
-    createdAt: '2026-03-28T10:05:00-03:00',
+    createdAt: '2026-05-05T10:05:00-03:00',
     deliveryType: 'Envio a obra',
-    branch: 'Andres Merino Oeste',
+    branch: 'Sucursal Oeste',
     billingName: 'Obras del Sur',
     taxId: '20-28765432-1',
     notes: 'Coordinar descarga con encargado de obra.',
@@ -618,9 +618,9 @@ export const DEFAULT_ORDERS = [
       { productId: 2, qty: 1 },
       { productId: 6, qty: 1 },
     ],
-    createdAt: '2026-03-27T17:15:00-03:00',
+    createdAt: '2026-04-30T17:15:00-03:00',
     deliveryType: 'Retiro en sucursal',
-    branch: 'Andres Merino Centro',
+    branch: 'Sucursal Centro',
     billingName: 'Ferreteria El Clavo Feliz',
     taxId: '20-32456789-4',
     notes: 'Cancelar si no llega el tono solicitado.',
@@ -637,9 +637,9 @@ export const DEFAULT_ORDERS = [
       { productId: 2, qty: 10 },
       { productId: 6, qty: 4 },
     ],
-    createdAt: '2026-03-27T11:30:00-03:00',
+    createdAt: '2026-04-30T11:30:00-03:00',
     deliveryType: 'Envio a obra',
-    branch: 'Andres Merino Norte',
+    branch: 'Sucursal Norte',
     billingName: 'Pintureria San Jorge',
     taxId: '30-71234567-3',
     notes: 'Entregar por la manana con descarga lateral.',
@@ -655,14 +655,14 @@ export const DEFAULT_REDEMPTIONS = [
     clientId: 1,
     reward: '10% en rodillos',
     points: 1200,
-    createdAt: '2026-03-29T16:25:00-03:00',
+    createdAt: '2026-05-09T16:25:00-03:00',
   },
   {
     id: 'CAN-108',
     clientId: 3,
     reward: '5% en impermeabilizantes',
     points: 800,
-    createdAt: '2026-03-27T09:10:00-03:00',
+    createdAt: '2026-04-30T09:10:00-03:00',
   },
 ]
 
@@ -820,7 +820,7 @@ export const DEFAULT_AUDIT_LOG = [
     id: 'LOG-1',
     message:
       "Admin Demo aprobó el pedido 'PED-2011' y actualizó stock el 27 de marzo de 2026.",
-    createdAt: '2026-03-27T11:35:00-03:00',
+    createdAt: '2026-04-30T11:35:00-03:00',
   },
 ]
 
