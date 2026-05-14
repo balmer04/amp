@@ -20,10 +20,23 @@ import {
 
 const tabs = [
   { id: 'inicio', label: 'Inicio' },
+  { id: 'catalogo', label: 'Catálogo' },
   { id: 'pedido', label: 'Armar pedido' },
+  { id: 'historial', label: 'Mis pedidos' },
+  { id: 'cotizaciones', label: 'Cotizaciones' },
+  { id: 'cuentacorriente', label: 'Cuenta corriente' },
+  { id: 'beneficios', label: 'Beneficios' },
   { id: 'cuenta', label: 'Mi cuenta' },
-  { id: 'ia', label: 'IA' },
+  { id: 'ia', label: 'Asistente IA' },
   { id: 'chat', label: 'Chat' },
+]
+
+const clientTabGroups = [
+  { title: 'Inicio', items: ['inicio'] },
+  { title: 'Comprar', items: ['catalogo', 'pedido', 'historial', 'cotizaciones'] },
+  { title: 'Finanzas', items: ['cuentacorriente', 'beneficios'] },
+  { title: 'Cuenta', items: ['cuenta'] },
+  { title: 'Soporte', items: ['ia', 'chat'] },
 ]
 const CLIENT_PRODUCT_PAGE_SIZE = 36
 const CLIENT_VIEW_META = {
@@ -56,6 +69,31 @@ const CLIENT_VIEW_META = {
     eyebrow: 'Panel cliente',
     title: 'Chat',
     description: 'Conversacion directa con administracion.',
+  },
+  catalogo: {
+    eyebrow: 'Productos',
+    title: 'Catálogo',
+    description: 'Explorá nuestro catálogo completo y agregá productos al pedido.',
+  },
+  historial: {
+    eyebrow: 'Compras',
+    title: 'Mis pedidos',
+    description: 'Historial de pedidos, estado actual y recompra rápida.',
+  },
+  cotizaciones: {
+    eyebrow: 'Pre-venta',
+    title: 'Cotizaciones',
+    description: 'Propuestas comerciales recibidas. Aceptalas y convertilas en pedido.',
+  },
+  cuentacorriente: {
+    eyebrow: 'Finanzas',
+    title: 'Cuenta corriente',
+    description: 'Saldo, vencimientos y movimientos.',
+  },
+  beneficios: {
+    eyebrow: 'Tu nivel',
+    title: 'Beneficios y promociones',
+    description: 'Descuentos activos y promos exclusivas por tu nivel.',
   },
 }
 
@@ -132,6 +170,42 @@ function ClientSidebarIcon({ tabId }) {
           <path d="M5 6.5h14v9H9.5L6 18v-2.5H5z" />
         </svg>
       )
+    case 'catalogo':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="5" width="7" height="6" rx="1" />
+          <rect x="13" y="5" width="7" height="6" rx="1" />
+          <rect x="4" y="13" width="7" height="6" rx="1" />
+          <rect x="13" y="13" width="7" height="6" rx="1" />
+        </svg>
+      )
+    case 'historial':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      )
+    case 'cotizaciones':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 3h7l4 4v14H7z" />
+          <path d="M14 3v4h4M10 12h6M10 16h4" />
+        </svg>
+      )
+    case 'cuentacorriente':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="6" width="18" height="13" rx="1.5" />
+          <path d="M3 10h18M7 15h3" />
+        </svg>
+      )
+    case 'beneficios':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m12 4 2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L4.8 9.2l5-.7z" />
+        </svg>
+      )
     case 'ia':
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -164,11 +238,11 @@ function ClientSidebar({
   return (
     <aside className="client-sidebar">
       <div className="client-sidebar-brand">
-        <img
-          src="/branding/navbar-logo.svg"
-          alt="Cadena de Pinturerias"
-          className="client-sidebar-logo"
-        />
+        <div className="client-sidebar-wordmark">Nexo</div>
+        <div className="client-sidebar-brand-meta">
+          <span className="client-sidebar-status-dot" aria-hidden="true"></span>
+          <small>Portal mayorista</small>
+        </div>
       </div>
 
       <article className="client-sidebar-level-card">
@@ -193,27 +267,36 @@ function ClientSidebar({
       </article>
 
       <nav className="client-sidebar-nav">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={
-              activeTab === tab.id || (activeTab === 'checkout' && tab.id === 'pedido')
-                ? 'client-sidebar-link active'
-                : 'client-sidebar-link'
-            }
-            onClick={() => onTabChange(tab.id)}
-          >
-            <span className="client-sidebar-link-main">
-              <span className="client-sidebar-link-icon">
-                <ClientSidebarIcon tabId={tab.id} />
-              </span>
-              <span>{tab.label}</span>
-            </span>
-            {tab.id === 'chat' && unreadCount > 0 ? (
-              <span className="client-sidebar-badge">{unreadCount}</span>
-            ) : null}
-          </button>
+        {clientTabGroups.map((group) => (
+          <div key={group.title} className="client-sidebar-group">
+            <span className="client-sidebar-group-title">{group.title}</span>
+            <div className="client-sidebar-group-links">
+              {group.items.map((tabId) => {
+                const tab = tabs.find((t) => t.id === tabId)
+                if (!tab) return null
+                const isActive =
+                  activeTab === tab.id || (activeTab === 'checkout' && tab.id === 'pedido')
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={isActive ? 'client-sidebar-link active' : 'client-sidebar-link'}
+                    onClick={() => onTabChange(tab.id)}
+                  >
+                    <span className="client-sidebar-link-main">
+                      <span className="client-sidebar-link-icon">
+                        <ClientSidebarIcon tabId={tab.id} />
+                      </span>
+                      <span>{tab.label}</span>
+                    </span>
+                    {tab.id === 'chat' && unreadCount > 0 ? (
+                      <span className="client-sidebar-badge">{unreadCount}</span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         ))}
       </nav>
 
@@ -2087,6 +2170,394 @@ function AccountPage({
   )
 }
 
+// ─── Catálogo: navegación de productos sin compromiso de pedido ─────────────
+function CatalogPage({ products, onAddToOrder, onGoToOrder }) {
+  const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('Todos')
+
+  const categories = useMemo(() => {
+    const cats = new Set(products.map((p) => p.category || 'General'))
+    return ['Todos', ...Array.from(cats).sort()]
+  }, [products])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return products.filter((p) => {
+      const matchesQ = !q ||
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q) ||
+        (p.brand || '').toLowerCase().includes(q)
+      const matchesCat = category === 'Todos' || (p.category || 'General') === category
+      return matchesQ && matchesCat
+    })
+  }, [products, search, category])
+
+  return (
+    <section className="client-section">
+      <article className="client-panel-card">
+        <div className="catalog-filters">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar producto, SKU o marca…"
+            className="catalog-search"
+          />
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="catalog-cat-select">
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <button type="button" className="client-cta-btn" onClick={onGoToOrder}>
+            Ir al pedido →
+          </button>
+        </div>
+
+        <p className="catalog-count">{filtered.length} productos</p>
+
+        {filtered.length === 0 ? (
+          <div className="client-empty-state">
+            <p>Sin resultados</p>
+            <small>Probá con otros términos de búsqueda.</small>
+          </div>
+        ) : (
+          <div className="catalog-grid">
+            {filtered.slice(0, 60).map((p) => (
+              <article key={p.id} className="catalog-card">
+                <div className="catalog-card-image">
+                  <span>{(p.name || '?')[0].toUpperCase()}</span>
+                </div>
+                <div className="catalog-card-body">
+                  <strong>{p.name}</strong>
+                  <small>{p.brand || 'Marca'} · SKU {p.sku || '—'}</small>
+                  <div className="catalog-card-footer">
+                    <strong>{formatCurrency(p.price || 0)}</strong>
+                    <button
+                      type="button"
+                      className="client-cta-btn small"
+                      onClick={() => onAddToOrder(p.id)}
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
+// ─── Mis pedidos: historial con recompra rápida ─────────────────────────────
+function OrderHistoryPage({ clientOrders, products, onRepeatOrder, onGoToOrder }) {
+  const [statusFilter, setStatusFilter] = useState('todos')
+
+  const filtered = useMemo(() => {
+    if (statusFilter === 'todos') return clientOrders
+    return clientOrders.filter((o) => o.status === statusFilter)
+  }, [clientOrders, statusFilter])
+
+  return (
+    <section className="client-section">
+      <article className="client-panel-card">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Historial</span>
+            <h2>{clientOrders.length} pedidos en total</h2>
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="catalog-cat-select"
+          >
+            <option value="todos">Todos los estados</option>
+            <option value="Pendiente">Pendiente</option>
+            <option value="Aprobado">Aprobado</option>
+            <option value="Preparando">Preparando</option>
+            <option value="Despachado">Despachado</option>
+            <option value="Cancelado">Cancelado</option>
+          </select>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="client-empty-state">
+            <p>No tenés pedidos {statusFilter !== 'todos' ? `en estado "${statusFilter}"` : 'todavía'}</p>
+            <button type="button" className="client-cta-btn" onClick={onGoToOrder}>
+              Armar primer pedido
+            </button>
+          </div>
+        ) : (
+          <div className="client-orders-table">
+            {filtered.map((o) => {
+              const itemCount = (o.items || []).reduce((s, it) => s + (Number(it.qty) || 0), 0)
+              return (
+                <div key={o.id} className="client-order-row">
+                  <div>
+                    <strong>Pedido {o.id}</strong>
+                    <small>{o.createdAt ? formatDate(o.createdAt) : '—'} · {itemCount} unidades</small>
+                  </div>
+                  <span className={`client-pill ${
+                    o.status === 'Despachado' ? 'success'
+                    : o.status === 'Cancelado' ? 'danger'
+                    : o.status === 'Pendiente' ? 'warning'
+                    : 'info'
+                  }`}>
+                    {o.status}
+                  </span>
+                  <strong>{formatCurrency(o.total || 0)}</strong>
+                  <button
+                    type="button"
+                    className="client-cta-btn small ghost"
+                    onClick={() => onRepeatOrder(o.id)}
+                  >
+                    Repetir
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
+// ─── Cotizaciones recibidas ─────────────────────────────────────────────────
+function ClientCotizacionesPage({ session }) {
+  const [cotizaciones, setCotizaciones] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const token = session?.token
+    if (!token) return
+    fetch('/api/admin/cotizaciones', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.ok) {
+          // Filter to only this client's quotes
+          const mine = (res.cotizaciones || []).filter(
+            (c) => String(c.client_json_id) === String(session.clientId || session.userId),
+          )
+          setCotizaciones(mine)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [session])
+
+  const handleAccept = async (id) => {
+    if (!window.confirm('¿Aceptar esta cotización?')) return
+    const token = session?.token
+    await fetch(`/api/admin/cotizaciones/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'aceptada' }),
+    })
+    setCotizaciones((prev) => prev.map((c) => c.id === id ? { ...c, estado: 'aceptada' } : c))
+  }
+
+  const handleReject = async (id) => {
+    if (!window.confirm('¿Rechazar esta cotización?')) return
+    const token = session?.token
+    await fetch(`/api/admin/cotizaciones/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'rechazada' }),
+    })
+    setCotizaciones((prev) => prev.map((c) => c.id === id ? { ...c, estado: 'rechazada' } : c))
+  }
+
+  return (
+    <section className="client-section">
+      <article className="client-panel-card">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Pre-venta</span>
+            <h2>Cotizaciones recibidas</h2>
+          </div>
+        </div>
+
+        {loading ? (
+          <p style={{ padding: '1rem', color: '#71717a' }}>Cargando…</p>
+        ) : cotizaciones.length === 0 ? (
+          <div className="client-empty-state">
+            <p>No tenés cotizaciones pendientes</p>
+            <small>Cuando recibas una propuesta comercial, te aparecerá acá.</small>
+          </div>
+        ) : (
+          <div className="client-orders-table">
+            {cotizaciones.map((c) => {
+              const items = Array.isArray(c.items) ? c.items : []
+              const vencida = c.vencimiento && new Date(c.vencimiento) < new Date()
+              return (
+                <div key={c.id} className="client-cotizacion-card">
+                  <div className="client-cotizacion-head">
+                    <div>
+                      <strong>{c.numero}</strong>
+                      <small>
+                        Vence: {c.vencimiento?.slice(0, 10) || '—'}
+                        {vencida && c.estado === 'enviada' ? ' · VENCIDA' : ''}
+                      </small>
+                    </div>
+                    <span className={`client-pill ${
+                      c.estado === 'aceptada' || c.estado === 'convertida' ? 'success'
+                      : c.estado === 'rechazada' || c.estado === 'vencida' ? 'danger'
+                      : c.estado === 'enviada' ? 'info' : 'neutral'
+                    }`}>
+                      {c.estado}
+                    </span>
+                  </div>
+                  <div className="client-cotizacion-items">
+                    {items.slice(0, 3).map((it, i) => (
+                      <div key={i}>
+                        <span>{it.productName} × {it.qty}</span>
+                        <strong>{formatCurrency(it.subtotal || 0)}</strong>
+                      </div>
+                    ))}
+                    {items.length > 3 && (
+                      <small style={{ color: '#71717a' }}>+ {items.length - 3} productos más</small>
+                    )}
+                  </div>
+                  <div className="client-cotizacion-footer">
+                    <div>
+                      <small>Total</small>
+                      <strong>{formatCurrency(c.total || 0)}</strong>
+                    </div>
+                    {c.estado === 'enviada' && !vencida ? (
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button type="button" className="client-cta-btn ghost small" onClick={() => handleReject(c.id)}>
+                          Rechazar
+                        </button>
+                        <button type="button" className="client-cta-btn small" onClick={() => handleAccept(c.id)}>
+                          Aceptar
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
+// ─── Cuenta corriente (página dedicada, reutiliza el card existente) ────────
+function ClientCuentaCorrientePage({ session }) {
+  return (
+    <section className="client-section">
+      <ClientCuentaCorrienteCard session={session} />
+      <ClientDireccionesCard session={session} />
+    </section>
+  )
+}
+
+// ─── Beneficios y promociones para el tier actual ───────────────────────────
+function BeneficiosPage({ loyaltyStatus, tierBenefitSummary, client }) {
+  const [activePromos, setActivePromos] = useState([])
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('nexo-promociones') || '[]')
+      // Filter active and applicable to this client's tier or "todos"
+      const today = new Date().toISOString().slice(0, 10)
+      const applicable = stored.filter((p) =>
+        p.activa &&
+        (p.alcance === 'todos' || p.tier === loyaltyStatus.currentTier.name) &&
+        (!p.fin || p.fin >= today),
+      )
+      setActivePromos(applicable)
+    } catch { /* noop */ }
+  }, [loyaltyStatus.currentTier.name])
+
+  const categoryDiscounts = tierBenefitSummary?.categoryDiscounts || {}
+  const shippingMode = tierBenefitSummary?.shippingMode || 'none'
+
+  return (
+    <section className="client-section">
+      <article className="client-panel-card">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Tu nivel actual</span>
+            <h2>
+              <span className="client-tier-name">{loyaltyStatus.currentTier.name}</span> · {loyaltyStatus.points.toLocaleString('es-AR')} pts
+            </h2>
+          </div>
+        </div>
+
+        <div className="beneficios-progress">
+          <div className="beneficios-progress-bar">
+            <span style={{ width: `${loyaltyStatus.progress}%` }}></span>
+          </div>
+          <small>
+            {loyaltyStatus.nextTier
+              ? `Faltan ${loyaltyStatus.pointsToNext.toLocaleString('es-AR')} puntos para alcanzar ${loyaltyStatus.nextTier.name}`
+              : 'Alcanzaste el nivel máximo'}
+          </small>
+        </div>
+      </article>
+
+      <article className="client-panel-card">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Descuentos por categoría</span>
+            <h2>Tus beneficios activos</h2>
+          </div>
+        </div>
+
+        <div className="beneficios-grid">
+          {Object.entries(categoryDiscounts).map(([cat, pct]) => (
+            <div key={cat} className={`beneficios-card ${pct > 0 ? 'active' : ''}`}>
+              <strong>{pct}%</strong>
+              <small>{cat}</small>
+            </div>
+          ))}
+          <div className={`beneficios-card ${shippingMode !== 'none' ? 'active' : ''}`}>
+            <strong>
+              {shippingMode === 'free' ? '100%' : shippingMode === 'discounted' ? `${tierBenefitSummary?.shippingDiscountPercent}%` : '—'}
+            </strong>
+            <small>Envío</small>
+          </div>
+        </div>
+      </article>
+
+      <article className="client-panel-card">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Campañas</span>
+            <h2>Promociones activas para vos</h2>
+          </div>
+        </div>
+
+        {activePromos.length === 0 ? (
+          <div className="client-empty-state">
+            <p>No hay promociones activas en este momento</p>
+            <small>Cuando lancemos campañas para tu nivel, las verás acá.</small>
+          </div>
+        ) : (
+          <div className="promos-active-grid">
+            {activePromos.map((p) => (
+              <div key={p.id} className="promo-active-card">
+                <strong>{p.nombre}</strong>
+                <div className="promo-active-value">
+                  {p.tipo === 'percent' && `${p.valor}% off`}
+                  {p.tipo === 'fixed' && `${formatCurrency(p.valor)} off`}
+                  {p.tipo === 'shipping' && 'Envío gratis'}
+                </div>
+                <small>
+                  Vigencia: {p.inicio}{p.fin ? ` → ${p.fin}` : ' en adelante'}
+                </small>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+    </section>
+  )
+}
+
 function ClientCuentaCorrienteCard({ session }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2847,6 +3318,42 @@ export function ClientDashboard() {
               clientOrders={clientOrders}
               previousOrders={previousOrders}
               orderItems={orderItems}
+            />
+          ) : null}
+
+          {activeTab === 'catalogo' ? (
+            <CatalogPage
+              products={products}
+              onAddToOrder={(productId) => {
+                // Add to cart and stay in catalog
+                if (catalogProps.onAddProduct) catalogProps.onAddProduct(productId)
+              }}
+              onGoToOrder={() => handleTabChange('pedido')}
+            />
+          ) : null}
+
+          {activeTab === 'historial' ? (
+            <OrderHistoryPage
+              clientOrders={clientOrders}
+              products={products}
+              onRepeatOrder={handleRepeatLastOrder}
+              onGoToOrder={() => handleTabChange('pedido')}
+            />
+          ) : null}
+
+          {activeTab === 'cotizaciones' ? (
+            <ClientCotizacionesPage session={session} />
+          ) : null}
+
+          {activeTab === 'cuentacorriente' ? (
+            <ClientCuentaCorrientePage session={session} />
+          ) : null}
+
+          {activeTab === 'beneficios' ? (
+            <BeneficiosPage
+              loyaltyStatus={loyaltyStatus}
+              tierBenefitSummary={tierBenefitSummary}
+              client={client}
             />
           ) : null}
 

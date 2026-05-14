@@ -7428,3 +7428,352 @@ button.admin-pill:hover { filter: brightness(0.96); }
 }
 
 
+
+/* ════════════════════════════════════════════════════════════════════════
+   NEXO · Client portal — sidebar groups, catalog, history, quotes, perks
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Client sidebar: refresh to match admin pattern */
+.client-sidebar-wordmark {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #ffffff;
+  line-height: 1;
+  padding-inline: 0.3rem;
+}
+.client-sidebar-brand-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+  padding-inline: 0.3rem;
+  margin-top: 0.4rem;
+}
+.client-sidebar-status-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: #1fd36b;
+}
+.client-sidebar-group {
+  display: grid;
+  gap: 0.18rem;
+  margin-bottom: 0.6rem;
+}
+.client-sidebar-group-title {
+  color: rgba(255, 255, 255, 0.32);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 0.15rem 0.6rem 0.4rem;
+}
+.client-sidebar-group-links {
+  display: grid;
+  gap: 0.12rem;
+}
+
+/* Generic client section spacing */
+.client-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.client-empty-state {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: #71717a;
+}
+.client-empty-state p {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3f3f46;
+}
+.client-empty-state small { color: #71717a; font-size: 0.85rem; }
+
+/* CTA buttons */
+.client-cta-btn {
+  padding: 0.55rem 1rem;
+  background: #18181b;
+  color: #fff;
+  border: 1px solid #18181b;
+  border-radius: 0.45rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.client-cta-btn:hover { background: #27272a; }
+.client-cta-btn.small { padding: 0.4rem 0.75rem; font-size: 0.78rem; }
+.client-cta-btn.ghost {
+  background: #fff;
+  color: #18181b;
+  border-color: #d4d4d8;
+}
+.client-cta-btn.ghost:hover { background: #f4f4f5; }
+
+/* Client pill (mirror admin .admin-pill) */
+.client-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.client-pill.neutral { background: #f4f4f5; color: #52525b; border-color: #e4e4e7; }
+.client-pill.info    { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.client-pill.success { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.client-pill.warning { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.client-pill.danger  { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+
+/* — Catálogo — */
+.catalog-filters {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.catalog-search {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.5rem;
+  font: inherit;
+  background: #fafafa;
+}
+.catalog-search:focus {
+  outline: none;
+  background: #fff;
+  border-color: #d4d4d8;
+}
+.catalog-cat-select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.5rem;
+  font: inherit;
+  background: #fff;
+  cursor: pointer;
+  min-width: 180px;
+}
+.catalog-count {
+  margin: 0 0 1rem;
+  color: #71717a;
+  font-size: 0.85rem;
+}
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.85rem;
+}
+.catalog-card {
+  background: #fff;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.catalog-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.06);
+}
+.catalog-card-image {
+  height: 110px;
+  background: linear-gradient(135deg, #f4f4f5, #e4e4e7);
+  display: grid;
+  place-items: center;
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: #a1a1aa;
+}
+.catalog-card-body {
+  padding: 0.7rem 0.85rem 0.85rem;
+  display: grid;
+  gap: 0.25rem;
+}
+.catalog-card-body strong {
+  font-size: 0.92rem;
+  color: #18181b;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.catalog-card-body small {
+  color: #71717a;
+  font-size: 0.74rem;
+}
+.catalog-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.catalog-card-footer strong {
+  font-size: 1.05rem;
+  color: #18181b;
+}
+
+/* — Mis pedidos historial — */
+.client-orders-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.client-order-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 110px 120px 110px;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  background: #fafafa;
+  border: 1px solid #f4f4f5;
+  border-radius: 0.55rem;
+}
+.client-order-row > div small {
+  display: block;
+  color: #71717a;
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+/* — Cotizaciones cliente — */
+.client-cotizacion-card {
+  background: #fafafa;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.6rem;
+  padding: 1rem 1.1rem;
+  display: grid;
+  gap: 0.7rem;
+}
+.client-cotizacion-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.client-cotizacion-head small {
+  display: block;
+  color: #71717a;
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+.client-cotizacion-items {
+  background: #fff;
+  border: 1px solid #f4f4f5;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+.client-cotizacion-items > div {
+  display: flex;
+  justify-content: space-between;
+}
+.client-cotizacion-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #e4e4e7;
+  padding-top: 0.7rem;
+}
+.client-cotizacion-footer small {
+  display: block;
+  color: #71717a;
+  font-size: 0.72rem;
+}
+.client-cotizacion-footer strong {
+  font-size: 1.15rem;
+  color: #18181b;
+}
+
+/* — Beneficios — */
+.beneficios-progress {
+  margin-top: 0.6rem;
+}
+.beneficios-progress-bar {
+  height: 6px;
+  background: #f4f4f5;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+.beneficios-progress-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #18181b, #52525b);
+}
+.beneficios-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+.beneficios-card {
+  background: #fafafa;
+  border: 1px solid #f4f4f5;
+  border-radius: 0.5rem;
+  padding: 0.85rem;
+  text-align: center;
+  display: grid;
+  gap: 0.2rem;
+}
+.beneficios-card strong {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #a1a1aa;
+  letter-spacing: -0.02em;
+}
+.beneficios-card small {
+  color: #71717a;
+  font-size: 0.78rem;
+}
+.beneficios-card.active {
+  background: #18181b;
+  border-color: #18181b;
+}
+.beneficios-card.active strong { color: #ffffff; }
+.beneficios-card.active small { color: rgba(255,255,255,0.7); }
+
+.promos-active-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.7rem;
+}
+.promo-active-card {
+  background: linear-gradient(135deg, #18181b, #3f3f46);
+  color: #fff;
+  border-radius: 0.6rem;
+  padding: 1rem 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.promo-active-card strong {
+  font-size: 0.94rem;
+  font-weight: 600;
+}
+.promo-active-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.promo-active-card small {
+  color: rgba(255,255,255,0.7);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 800px) {
+  .client-order-row { grid-template-columns: 1fr; gap: 0.4rem; }
+  .client-cotizacion-head { flex-direction: column; gap: 0.5rem; }
+}
