@@ -10,9 +10,14 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const { Pool } = pg;
 
-// Vercel inyecta automÃ¡ticamente esta variable si enlazaste Supabase
+// Soporta tanto Supabase (POSTGRES_URL) como Neon con prefijo (ampdatabase_POSTGRES_URL)
+const connectionString =
+  process.env.POSTGRES_URL ||
+  process.env.ampdatabase_POSTGRES_URL ||
+  process.env.ampdatabase_DATABASE_URL;
+
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_URL,
+  connectionString,
   ssl: { rejectUnauthorized: false }
 });
 
