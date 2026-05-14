@@ -55,12 +55,10 @@ export function NexoftWordmark({ size = 'md', tone = 'light' }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '0.55rem',
         color: colors.text,
         lineHeight: 1,
       }}
     >
-      <NexoftMark size={sizes.mark} color={colors.icon} />
       <span
         style={{
           fontSize: sizes.font,

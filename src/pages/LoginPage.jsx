@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { NexoftMark } from '../components/NexoftLogo'
 
 // TODO: ocultar en producción real una vez salida la demo
 const quickAccessUsers = {
@@ -115,7 +114,6 @@ export function LoginPage() {
       <section className="login-hero">
         <div className="brand-lockup">
           <div className="brand-badge" aria-label="Nexoft">
-            <div className="brand-mark-lg"><NexoftMark size={88} color="#FFFFFF" dotColor="#FFD100" /></div>
             <p className="brand-overline">Soluciones tecnológicas para distribuidoras</p>
             <h1 className="brand-name-hero">Nexoft</h1>
           </div>
