@@ -7134,14 +7134,14 @@ export function AdminDashboard() {
                 <>
                   <button
                     type="button"
-                    className="admin-topbar-action-btn"
+                    className="px-btn secondary"
                     onClick={handleRefreshDashboard}
                   >
-                    ↻ Actualizar datos
+                    ↻ Actualizar
                   </button>
                   <button
                     type="button"
-                    className="admin-topbar-action-btn primary"
+                    className="px-btn primary"
                     onClick={handleCreateClientFromDashboard}
                   >
                     + Nuevo cliente
@@ -7154,154 +7154,210 @@ export function AdminDashboard() {
 
         <section className="admin-content">
           {activeSection === 'dashboard' ? (
-            <section className="admin-section">
-              <div className="admin-hero-grid">
-                {metrics.map((metric) => (
-                  <HeroMetricCard key={metric.title} {...metric} />
+            <section className="px-section">
+
+              {/* ── Fila 1: KPIs principales ── */}
+              <div className="px-kpi-bar">
+                <div className="px-kpi tone-blue">
+                  <span className="px-kpi-label">Ventas 30 días</span>
+                  <span className="px-kpi-value px-money">{metrics[0]?.value}</span>
+                  <span className="px-kpi-sub">Facturación del período</span>
+                </div>
+                <div className={`px-kpi ${orderSummary.pending > 0 ? 'tone-red' : 'tone-slate'}`}>
+                  <span className="px-kpi-label">Pedidos pendientes</span>
+                  <span className="px-kpi-value">{orderSummary.pending}</span>
+                  <span className="px-kpi-sub">Esperando aprobación</span>
+                </div>
+                <div className={`px-kpi ${orderSummary.preparing > 0 ? 'tone-amber' : 'tone-slate'}`}>
+                  <span className="px-kpi-label">En preparación</span>
+                  <span className="px-kpi-value">{orderSummary.preparing}</span>
+                  <span className="px-kpi-sub">En proceso de armado</span>
+                </div>
+                <div className="px-kpi tone-green">
+                  <span className="px-kpi-label">Pedidos hoy</span>
+                  <span className="px-kpi-value">{orderSummary.totalToday}</span>
+                  <span className="px-kpi-sub">{formatCurrency(orderSummary.amountToday)} facturados</span>
+                </div>
+              </div>
+
+              {/* ── Fila 2: KPIs secundarios ── */}
+              <div className="px-kpi-bar" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                {dashboardExtraMetrics.map((m) => (
+                  <div key={m.title} className={`px-kpi tone-${m.tone === 'navy' ? 'blue' : m.tone}`} style={{ padding: '0.7rem 1rem' }}>
+                    <span className="px-kpi-label">{m.title}</span>
+                    <span className="px-kpi-value" style={{ fontSize: '1.15rem' }}>{m.value}</span>
+                    <span className="px-kpi-sub">{m.detail}</span>
+                  </div>
                 ))}
               </div>
 
-              <div className="admin-secondary-grid">
-                {dashboardExtraMetrics.map((metric) => (
-                  <SecondaryMetricCard key={metric.title} {...metric} />
-                ))}
-              </div>
-
-              <article className="admin-card">
-                <div className="admin-section-header">
-                  <div>
-                    <span className="admin-card-eyebrow">Accesos directos</span>
-                    <h2>Acciones rapidas</h2>
-                  </div>
-                </div>
-
-                <div className="admin-quick-actions-grid">
-                  <button
-                    type="button"
-                    className="admin-quick-action-btn primary"
-                    onClick={handleCreateClientFromDashboard}
-                  >
-                    Nuevo cliente
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-quick-action-btn"
-                    onClick={handleViewPendingOrders}
-                  >
-                    Ver pedidos pendientes
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-quick-action-btn"
-                    onClick={handleAdjustStock}
-                  >
-                    Ajustar stock
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-quick-action-btn"
-                    onClick={handleViewClientRanking}
-                  >
-                    Ver ranking de clientes
-                  </button>
-                </div>
-              </article>
-
-              <div className="admin-dashboard-chart-grid">
-                <SalesChartCard data={salesLast7Days} />
-                <OrderStatusChartCard data={ordersByStatus} />
-              </div>
-
-              <article className="admin-card" id="dashboard-top-clients">
-                <div className="admin-section-header">
-                  <div>
-                    <span className="admin-card-eyebrow">Ranking</span>
-                    <h2>Top 5 clientes del mes</h2>
-                  </div>
-                </div>
-
-                <div className="admin-table">
-                  <div className="admin-table-row admin-table-head admin-top-clients-grid">
-                    <span>Cliente</span>
-                    <span>Pedidos</span>
-                    <span>Total comprado</span>
-                  </div>
-
-                  {topClientsThisMonth.map((client) => (
-                    <div key={client.clientId} className="admin-table-row admin-top-clients-grid">
-                      <strong>{client.name}</strong>
-                      <span>{client.orders}</span>
-                      <strong>{formatCurrency(client.total)}</strong>
+              {/* ── Alertas activas (solo si las hay) ── */}
+              {attentionItems.length > 0 && (
+                <div className="px-card" style={{ padding: '0' }}>
+                  <div className="px-card-head" style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #e2e8f0' }}>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#dc2626' }}>Atención requerida</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>{attentionItems.length} ítem(s) pendiente(s)</div>
                     </div>
-                  ))}
-                </div>
-              </article>
-
-              <article className="admin-card">
-                <div className="admin-section-header">
-                  <div>
-                    <span className="admin-card-eyebrow">Atencion</span>
-                    <h2>Requieren atencion</h2>
                   </div>
-                </div>
-
-                {attentionItems.length > 0 ? (
-                  <div className="admin-card-stack admin-attention-list">
-                    {attentionItems.map((item) => (
-                      <div key={item.id} className={`admin-attention-row ${item.tone}`}>
-                        <span>{item.text}</span>
-                        <button
-                          type="button"
-                          className="admin-action-btn neutral"
-                          onClick={item.action}
-                        >
-                          {item.actionLabel}
-                        </button>
+                  <div>
+                    {attentionItems.slice(0, 4).map((item) => (
+                      <div key={item.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        padding: '0.6rem 1rem', borderBottom: '1px solid #f1f5f9',
+                        background: item.tone === 'danger' ? '#fff8f8' : item.tone === 'warning' ? '#fffbeb' : '#fff',
+                      }}>
+                        <span style={{ fontSize: '0.85rem', flex: 1, color: '#374151' }}>{item.text}</span>
+                        <button type="button" className="px-btn px-btn-sm secondary" onClick={item.action}>{item.actionLabel}</button>
                       </div>
                     ))}
-                  </div>
-                ) : (
-                  <div className="admin-all-clear">Todo en orden ✓</div>
-                )}
-              </article>
-
-              <article className="admin-card">
-                <div className="admin-section-header">
-                  <div>
-                    <span className="admin-card-eyebrow">Auditoria</span>
-                    <h2>Historial de cambios</h2>
+                    {attentionItems.length > 4 && (
+                      <div style={{ padding: '0.45rem 1rem', fontSize: '0.78rem', color: '#64748b' }}>
+                        +{attentionItems.length - 4} ítem(s) más
+                      </div>
+                    )}
                   </div>
                 </div>
+              )}
 
-                <div className="admin-card-stack">
-                  {auditLog.slice(0, 3).map((entry) => {
-                    const meta = getAuditEntryMeta(entry.message)
+              {/* ── Acciones rápidas ── */}
+              <div className="px-card">
+                <div className="px-card-head">
+                  <div>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: 2 }}>Accesos directos</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>Acciones rápidas</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.6rem' }}>
+                  {[
+                    { label: '+ Nuevo cliente', icon: '👤', action: handleCreateClientFromDashboard, primary: true },
+                    { label: 'Pedidos pendientes', icon: '📋', action: handleViewPendingOrders, primary: false },
+                    { label: 'Ajustar stock', icon: '📦', action: handleAdjustStock, primary: false },
+                    { label: 'Ranking de clientes', icon: '🏆', action: handleViewClientRanking, primary: false },
+                  ].map(({ label, icon, action, primary }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={action}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.6rem',
+                        padding: '0.7rem 1rem', border: primary ? 'none' : '1px solid #e2e8f0',
+                        background: primary ? '#1A1FBE' : '#fff', color: primary ? '#fff' : '#0f172a',
+                        fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', textAlign: 'left',
+                        transition: 'background 0.15s',
+                      }}
+                    >
+                      <span style={{ fontSize: '1.1rem' }}>{icon}</span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                    return (
-                    <div key={entry.id} className={`admin-alert-row rich ${meta.tone}`}>
-                      <div className="admin-alert-main">
-                        <span className="admin-alert-icon" aria-hidden="true">
-                          {meta.icon}
-                        </span>
-                        <strong>{entry.message}</strong>
-                      </div>
-                      <span>{formatDate(entry.createdAt)}</span>
+              {/* ── Gráficos + Top clientes ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '1rem' }}>
+
+                {/* Gráfico ventas 7 días */}
+                <div className="px-card">
+                  <div className="px-card-head" style={{ marginBottom: '0.75rem' }}>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: 2 }}>Ventas</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>Últimos 7 días</div>
                     </div>
+                  </div>
+                  <SalesChartCard data={salesLast7Days} />
+                </div>
+
+                {/* Estado de pedidos + top clientes apilados */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {/* Estado pedidos */}
+                  <div className="px-card">
+                    <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: '0.6rem' }}>Estado de pedidos</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      {ordersByStatus.map((s) => {
+                        const total = ordersByStatus.reduce((a, b) => a + b.value, 0) || 1
+                        const pct = Math.round((s.value / total) * 100)
+                        const colorMap = { neutral: '#94a3b8', info: '#3b82f6', warning: '#f59e0b', success: '#16a34a', danger: '#dc2626' }
+                        const color = colorMap[s.tone] || '#94a3b8'
+                        return (
+                          <div key={s.label}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: 2 }}>
+                              <span style={{ color: '#374151' }}>{s.label}</span>
+                              <span style={{ fontWeight: 700, color: '#0f172a' }}>{s.value}</span>
+                            </div>
+                            <div style={{ height: 4, background: '#f1f5f9', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: color, transition: 'width 0.4s' }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Top clientes del mes */}
+                  <div className="px-card" style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: '0.6rem' }}>Top clientes del mes</div>
+                    {topClientsThisMonth.length === 0 ? (
+                      <div style={{ fontSize: '0.83rem', color: '#94a3b8', padding: '0.5rem 0' }}>Sin datos este mes.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                        {topClientsThisMonth.map((c, i) => (
+                          <div key={c.clientId} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            <span style={{
+                              width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: '0.68rem', fontWeight: 800,
+                              background: i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : '#fff7ed',
+                              color: i === 0 ? '#92400e' : i === 1 ? '#475569' : '#9a3412',
+                              flexShrink: 0,
+                            }}>
+                              {i + 1}
+                            </span>
+                            <span style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#1A1FBE', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{formatCurrency(c.total)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Auditoría ── */}
+              <div className="px-card">
+                <div className="px-card-head" style={{ marginBottom: '0.6rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b', marginBottom: 2 }}>Auditoría</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>Últimos cambios</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="px-btn px-btn-sm secondary"
+                    onClick={() => { setAuditPage(1); setIsAuditModalOpen(true) }}
+                  >
+                    Ver historial completo →
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {auditLog.slice(0, 5).map((entry, i) => {
+                    const meta = getAuditEntryMeta(entry.message)
+                    return (
+                      <div key={entry.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        padding: '0.55rem 0',
+                        borderBottom: i < 4 ? '1px solid #f1f5f9' : 'none',
+                      }}>
+                        <span style={{ fontSize: '1rem', flexShrink: 0 }}>{meta.icon}</span>
+                        <span style={{ flex: 1, fontSize: '0.82rem', color: '#374151' }}>{entry.message}</span>
+                        <span style={{ fontSize: '0.72rem', color: '#94a3b8', flexShrink: 0 }}>{formatDate(entry.createdAt)}</span>
+                      </div>
                     )
                   })}
+                  {auditLog.length === 0 && (
+                    <div style={{ fontSize: '0.83rem', color: '#94a3b8', padding: '0.5rem 0' }}>Sin actividad registrada.</div>
+                  )}
                 </div>
+              </div>
 
-                <button
-                  type="button"
-                  className="admin-table-link admin-history-link"
-                  onClick={() => {
-                    setAuditPage(1)
-                    setIsAuditModalOpen(true)
-                  }}
-                >
-                  Ver historial completo →
-                </button>
-              </article>
             </section>
           ) : null}
 
