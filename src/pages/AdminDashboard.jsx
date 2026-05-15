@@ -4006,11 +4006,13 @@ function StockSection({
 // ─── Cobranzas: vista dedicada de cuentas por cobrar con aging buckets ─────
 function CobranzasSection({ clients, orders, onOpenClient }) {
   const { session } = useAuth()
-  const [pagoModal, setPagoModal] = useState(null) // { client }
+  const [pagoModal, setPagoModal] = useState(null)
   const [pagoForm, setPagoForm] = useState({ tipo: 'pago', monto: '', descripcion: '' })
   const [pagoSaving, setPagoSaving] = useState(false)
   const [pagoError, setPagoError] = useState('')
-  const [localBalances, setLocalBalances] = useState({}) // { clientId: newBalance } para update optimista
+  const [localBalances, setLocalBalances] = useState({})
+  const [search, setSearch] = useState('')
+  const [bucketFilter, setBucketFilter] = useState('Todos')
 
   const handleOpenPago = (client) => {
     setPagoModal(client)
@@ -4041,7 +4043,6 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.message || 'Error al guardar')
-      // Update optimista del saldo local
       setLocalBalances((prev) => ({
         ...prev,
         [pagoModal.id]: Math.max(0, (Number(pagoModal.pendingBalance) || 0) + montoFinal),
@@ -4067,6 +4068,7 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
     })
 
     const buckets = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 }
+    const counts = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 }
     const debtorsWithAging = debtors.map((c) => {
       const lastTs = lastOrderByClient.get(c.id) || new Date(c.createdAt).getTime()
       const days = Math.floor((now - lastTs) / dayMs)
@@ -4077,141 +4079,316 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
       else if (days <= 90) bucket = '61-90'
       else bucket = '90+'
       buckets[bucket] += amount
+      counts[bucket] += 1
       return { ...c, daysSinceLastOrder: days, bucket, debtAmount: amount }
     })
 
     const total = Object.values(buckets).reduce((a, b) => a + b, 0)
     debtorsWithAging.sort((a, b) => b.debtAmount - a.debtAmount)
 
-    return { debtors: debtorsWithAging, buckets, total }
+    return { debtors: debtorsWithAging, buckets, counts, total }
   }, [clients, orders])
+
+  const filteredDebtors = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return data.debtors.filter((c) => {
+      const matchesBucket = bucketFilter === 'Todos' || c.bucket === bucketFilter
+      const matchesSearch = !q
+        || c.businessName?.toLowerCase().includes(q)
+        || c.taxId?.toLowerCase().includes(q)
+        || c.email?.toLowerCase().includes(q)
+      return matchesBucket && matchesSearch
+    })
+  }, [data.debtors, search, bucketFilter])
+
+  const exportCSV = () => {
+    const headers = ['Cliente', 'CUIT', 'Saldo pendiente', 'Antigüedad (días)', 'Bucket', 'Email', 'Teléfono']
+    const rows = filteredDebtors.map((c) => [
+      `"${c.businessName}"`,
+      c.taxId || '',
+      c.debtAmount,
+      c.daysSinceLastOrder,
+      c.bucket,
+      c.email || '',
+      c.phone || '',
+    ])
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cobranzas_${arToday()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const sendWhatsAppReminder = (c) => {
+    const phone = (c.phone || '').replace(/[^0-9]/g, '')
+    if (!phone) {
+      window.alert('Este cliente no tiene teléfono cargado.')
+      return
+    }
+    const msg = encodeURIComponent(
+      `Hola ${c.businessName}, te recordamos que tenés un saldo pendiente de ${formatCurrency(c.debtAmount)} con nosotros. Cualquier consulta estamos a disposición. Gracias!`
+    )
+    window.open(`https://wa.me/${phone}?text=${msg}`, '_blank')
+  }
+
+  // colores por bucket (consistente con KPI)
+  const BUCKET_META = {
+    '0-30':  { tone: 'tone-slate',  pill: 'neutral', color: '#64748b', label: '0–30 días',  desc: 'Riesgo bajo' },
+    '31-60': { tone: 'tone-blue',   pill: 'info',    color: '#1A1FBE', label: '31–60 días', desc: 'Atención comercial' },
+    '61-90': { tone: 'tone-amber',  pill: 'warning', color: '#d97706', label: '61–90 días', desc: 'Riesgo medio' },
+    '90+':   { tone: 'tone-red',    pill: 'danger',  color: '#dc2626', label: '90+ días',   desc: 'Crítico' },
+  }
+
+  const totalForBars = data.total || 1
 
   return (
     <>
-    <section className="admin-section">
-      <div className="admin-metrics-grid">
-        <MetricCard
-          title="Deuda total"
-          value={formatCurrency(data.total)}
-          detail={`${data.debtors.length} clientes con saldo`}
-          tone={data.total > 0 ? 'red' : 'slate'}
-        />
-        <MetricCard
-          title="0–30 días"
-          value={formatCurrency(data.buckets['0-30'])}
-          detail="Reciente, riesgo bajo"
-          tone="slate"
-        />
-        <MetricCard
-          title="31–60 días"
-          value={formatCurrency(data.buckets['31-60'])}
-          detail="Atención comercial"
-          tone="blue"
-        />
-        <MetricCard
-          title="61–90 días"
-          value={formatCurrency(data.buckets['61-90'])}
-          detail="Riesgo medio"
-          tone="navy"
-        />
-        <MetricCard
-          title="90+ días"
-          value={formatCurrency(data.buckets['90+'])}
-          detail="Riesgo alto"
-          tone={data.buckets['90+'] > 0 ? 'red' : 'slate'}
-        />
+    <section className="px-section">
+      {/* Header */}
+      <div className="px-header">
+        <div className="px-header-left">
+          <span className="px-eyebrow">Cuentas por cobrar</span>
+          <h2 className="px-title">Cobranzas</h2>
+          <p className="px-subtitle">
+            {data.debtors.length} {data.debtors.length === 1 ? 'cliente debe' : 'clientes deben'} ·{' '}
+            <strong style={{ color: '#dc2626' }}>{formatCurrency(data.total)}</strong> en total
+          </p>
+        </div>
+        <div className="px-header-actions">
+          <button type="button" className="px-btn secondary" onClick={exportCSV} disabled={filteredDebtors.length === 0}>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M10 3v10m0 0-3.5-3.5M10 13l3.5-3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              <path d="M4 15h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            Exportar CSV
+          </button>
+        </div>
       </div>
 
-      <article className="admin-card">
-        <div className="admin-section-header">
-          <div>
-            <span className="admin-card-eyebrow">Cuentas por cobrar</span>
-            <h2>Ranking de deudores</h2>
-          </div>
+      {/* KPI bar */}
+      <div className="px-kpi-bar">
+        <div className="px-kpi tone-red">
+          <span className="px-kpi-label">Deuda total</span>
+          <span className="px-kpi-value">{formatCurrency(data.total)}</span>
+          <span className="px-kpi-sub">{data.debtors.length} clientes con saldo</span>
         </div>
-
-        {data.debtors.length === 0 ? (
-          <div className="admin-all-clear">Sin saldos pendientes ✓</div>
-        ) : (
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head admin-cobranzas-grid">
-              <span>Cliente</span>
-              <span>Saldo</span>
-              <span>% Límite</span>
-              <span>Aging</span>
-              <span></span>
+        {Object.entries(data.buckets).map(([bucket, amount]) => {
+          const meta = BUCKET_META[bucket]
+          return (
+            <div key={bucket} className={`px-kpi ${meta.tone}`}>
+              <span className="px-kpi-label">{meta.label}</span>
+              <span className="px-kpi-value">{formatCurrency(amount)}</span>
+              <span className="px-kpi-sub">{data.counts[bucket]} clientes · {meta.desc}</span>
             </div>
-            {data.debtors.slice(0, 30).map((c) => {
-              const displayBalance = localBalances[c.id] !== undefined ? localBalances[c.id] : c.debtAmount
-              const usage = c.creditLimit > 0
-                ? Math.round((displayBalance / c.creditLimit) * 100)
-                : 0
-              const agingTone =
-                c.bucket === '90+' ? 'danger'
-                : c.bucket === '61-90' ? 'warning'
-                : c.bucket === '31-60' ? 'info'
-                : 'neutral'
+          )
+        })}
+      </div>
+
+      {/* Aging stacked bar */}
+      {data.total > 0 && (
+        <article className="px-card">
+          <div className="px-card-head">
+            <div>
+              <h3 className="px-card-title">Distribución por antigüedad</h3>
+              <p className="px-card-sub">Composición visual de la deuda activa</p>
+            </div>
+          </div>
+          <div className="px-stack-bar" role="img" aria-label="Distribución de deuda por antigüedad">
+            {Object.entries(data.buckets).map(([bucket, amount]) => {
+              const pct = (amount / totalForBars) * 100
+              if (pct < 0.5) return null
               return (
-                <div key={c.id} className="admin-table-row admin-cobranzas-grid">
-                  <div>
-                    <strong>{c.businessName}</strong>
-                    <small>{c.taxId || c.email}</small>
-                  </div>
-                  <strong style={{ color: displayBalance > 0 ? '#e53e3e' : '#38a169' }}>
-                    {localBalances[c.id] !== undefined && localBalances[c.id] === 0
-                      ? '✓ Saldado'
-                      : formatCurrency(displayBalance)}
-                  </strong>
-                  <span className={usage > 80 ? 'admin-pill danger' : 'admin-pill neutral'}>
-                    {usage}%
-                  </span>
-                  <span className={`admin-pill ${agingTone}`}>{c.bucket} días</span>
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    <button
-                      type="button"
-                      className="admin-action-btn primary"
-                      onClick={() => handleOpenPago(c)}
-                    >
-                      Registrar pago
-                    </button>
-                    <button
-                      type="button"
-                      className="admin-action-btn neutral"
-                      onClick={() => onOpenClient(c.id)}
-                    >
-                      Ver ficha
-                    </button>
-                  </div>
-                </div>
+                <span
+                  key={bucket}
+                  style={{ width: `${pct}%`, background: BUCKET_META[bucket].color }}
+                  title={`${BUCKET_META[bucket].label}: ${formatCurrency(amount)} (${pct.toFixed(0)}%)`}
+                />
               )
             })}
           </div>
-        )}
-      </article>
+          <div className="px-stack-legend">
+            {Object.entries(data.buckets).map(([bucket, amount]) => {
+              const pct = data.total > 0 ? Math.round((amount / data.total) * 100) : 0
+              return (
+                <span key={bucket} className="px-stack-legend-item">
+                  <span className="dot" style={{ background: BUCKET_META[bucket].color }} />
+                  {BUCKET_META[bucket].label} · <strong>{pct}%</strong>
+                </span>
+              )
+            })}
+          </div>
+        </article>
+      )}
+
+      {/* Toolbar */}
+      <div className="px-toolbar">
+        <div className="px-toolbar-left">
+          <div className="px-search">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" strokeWidth="1.6"/>
+              <path d="m13 13 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar deudor por nombre, CUIT o email…"
+            />
+          </div>
+          <div className="px-segmented">
+            {['Todos', '0-30', '31-60', '61-90', '90+'].map((b) => (
+              <button
+                key={b}
+                type="button"
+                className={bucketFilter === b ? 'active' : ''}
+                onClick={() => setBucketFilter(b)}
+              >
+                {b === 'Todos' ? 'Todos' : `${b} días`}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      {filteredDebtors.length === 0 ? (
+        <div className={data.debtors.length === 0 ? 'px-empty success' : 'px-empty'}>
+          {data.debtors.length === 0
+            ? '✓ Sin saldos pendientes — todas las cuentas al día'
+            : 'Sin deudores que coincidan con los filtros'}
+        </div>
+      ) : (
+        <div className="px-table-wrap">
+          <table className="px-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th className="right">Saldo</th>
+                <th>Antigüedad</th>
+                <th>% Límite</th>
+                <th>Contacto</th>
+                <th className="center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredDebtors.map((c) => {
+                const displayBalance = localBalances[c.id] !== undefined ? localBalances[c.id] : c.debtAmount
+                const usage = c.creditLimit > 0
+                  ? Math.round((displayBalance / c.creditLimit) * 100)
+                  : 0
+                const meta = BUCKET_META[c.bucket]
+                const isCleared = localBalances[c.id] !== undefined && localBalances[c.id] === 0
+                return (
+                  <tr key={c.id}>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => onOpenClient(c.id)}
+                        style={{
+                          background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.875rem' }}>{c.businessName}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                          {c.taxId ? `CUIT ${c.taxId}` : c.email}
+                        </div>
+                      </button>
+                    </td>
+                    <td className="right">
+                      <span className={`px-money ${isCleared ? 'cleared' : displayBalance > 0 ? 'debt' : 'muted'}`}>
+                        {isCleared ? '✓ Saldado' : formatCurrency(displayBalance)}
+                      </span>
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 2 }}>
+                        {c.daysSinceLastOrder} días sin compras
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`px-pill ${meta.pill}`}>{meta.label}</span>
+                    </td>
+                    <td>
+                      {c.creditLimit > 0 ? (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#475569', marginBottom: 3 }}>
+                            <span>{usage}%</span>
+                            <span style={{ color: '#94a3b8' }}>{formatCurrency(c.creditLimit)}</span>
+                          </div>
+                          <div className={`px-progress${usage > 100 ? ' danger' : usage > 80 ? ' warning' : ''}`}>
+                            <span style={{ width: `${Math.min(usage, 100)}%` }} />
+                          </div>
+                        </>
+                      ) : (
+                        <span style={{ color: '#cbd5e1', fontSize: '0.78rem' }}>Sin límite</span>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ fontSize: '0.78rem', color: '#475569' }}>
+                        {c.phone || <span style={{ color: '#cbd5e1' }}>Sin teléfono</span>}
+                      </div>
+                      {c.email && (
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{c.email}</div>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="px-btn px-btn-sm success"
+                          onClick={() => handleOpenPago(c)}
+                          disabled={isCleared}
+                          title="Registrar pago / nota de crédito"
+                        >
+                          Reg. pago
+                        </button>
+                        <button
+                          type="button"
+                          className="px-btn px-btn-sm ghost"
+                          onClick={() => sendWhatsAppReminder(c)}
+                          title="Enviar recordatorio por WhatsApp"
+                        >
+                          WhatsApp
+                        </button>
+                        <button
+                          type="button"
+                          className="px-btn px-btn-sm ghost"
+                          onClick={() => onOpenClient(c.id)}
+                          title="Ver ficha del cliente"
+                        >
+                          Ficha
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
 
+    {/* Payment modal */}
     {pagoModal ? (
-      <div className="admin-modal-backdrop" role="presentation" onClick={() => setPagoModal(null)}>
-        <div
-          className="admin-modal-card"
-          role="dialog"
-          aria-modal="true"
-          style={{ maxWidth: '440px' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="admin-modal-header">
+      <div className="px-modal-backdrop" role="presentation" onClick={() => setPagoModal(null)}>
+        <div className="px-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+          <div className="px-modal-head">
             <div>
-              <span className="admin-card-eyebrow">Cuenta corriente</span>
+              <span className="px-eyebrow">Cuenta corriente</span>
               <h3>Registrar movimiento</h3>
-              <p className="admin-modal-copy">{pagoModal.businessName} · Saldo actual: {formatCurrency(Number(pagoModal.pendingBalance) || 0)}</p>
+              <p className="px-card-sub" style={{ marginTop: 2 }}>
+                {pagoModal.businessName} · Saldo actual:{' '}
+                <strong style={{ color: '#dc2626' }}>{formatCurrency(Number(pagoModal.pendingBalance) || 0)}</strong>
+              </p>
             </div>
-            <button type="button" className="admin-modal-close" onClick={() => setPagoModal(null)}>Cerrar</button>
+            <button type="button" className="px-modal-close" onClick={() => setPagoModal(null)}>✕</button>
           </div>
-          <div className="admin-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <label className="admin-field-label">
-              Tipo de movimiento
+          <div className="px-modal-body">
+            <div className="px-field">
+              <label className="px-field-label">Tipo de movimiento</label>
               <select
-                className="admin-input"
+                className="px-select"
                 value={pagoForm.tipo}
                 onChange={(e) => setPagoForm((p) => ({ ...p, tipo: e.target.value }))}
               >
@@ -4219,42 +4396,55 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
                 <option value="nota_credito">Nota de crédito</option>
                 <option value="ajuste">Ajuste de saldo</option>
               </select>
-            </label>
-            <label className="admin-field-label">
-              Monto ($)
+            </div>
+            <div className="px-field">
+              <label className="px-field-label">Monto ($)</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                className="admin-input"
+                className="px-input"
                 placeholder="Ej: 15000"
                 value={pagoForm.monto}
                 onChange={(e) => setPagoForm((p) => ({ ...p, monto: e.target.value }))}
+                autoFocus
               />
-            </label>
-            <label className="admin-field-label">
-              Descripción (opcional)
+              {pagoForm.monto && !isNaN(parseFloat(pagoForm.monto)) && pagoForm.tipo === 'pago' && (
+                <small style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2 }}>
+                  Nuevo saldo después del pago:{' '}
+                  <strong>
+                    {formatCurrency(Math.max(0, (Number(pagoModal.pendingBalance) || 0) - parseFloat(pagoForm.monto)))}
+                  </strong>
+                </small>
+              )}
+            </div>
+            <div className="px-field">
+              <label className="px-field-label">Descripción (opcional)</label>
               <input
                 type="text"
-                className="admin-input"
-                placeholder="Ej: Transferencia bancaria 15/05"
+                className="px-input"
+                placeholder="Ej: Transferencia 15/05 - Banco Galicia"
                 value={pagoForm.descripcion}
                 onChange={(e) => setPagoForm((p) => ({ ...p, descripcion: e.target.value }))}
               />
-            </label>
-            {pagoError ? <p style={{ color: '#e53e3e', fontSize: '0.85rem' }}>{pagoError}</p> : null}
+            </div>
+            {pagoError ? (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: '0.5rem 0.75rem', fontSize: '0.8rem' }}>
+                {pagoError}
+              </div>
+            ) : null}
           </div>
-          <div className="admin-modal-footer">
-            <button type="button" className="admin-action-btn neutral" onClick={() => setPagoModal(null)}>
+          <div className="px-modal-foot">
+            <button type="button" className="px-btn secondary" onClick={() => setPagoModal(null)}>
               Cancelar
             </button>
             <button
               type="button"
-              className="admin-primary-btn"
+              className="px-btn primary"
               onClick={handleConfirmPago}
               disabled={pagoSaving}
             >
-              {pagoSaving ? 'Guardando...' : 'Confirmar'}
+              {pagoSaving ? 'Guardando…' : 'Confirmar movimiento'}
             </button>
           </div>
         </div>
@@ -4268,16 +4458,28 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
 function ReportesSection({ orders, products, clients, ordersWithClient }) {
   const [periodo, setPeriodo] = useState(30)
 
+  const computePeriod = (ordersList, days) => {
+    const cutoff = arStartOfDay(days)
+    return ordersList.filter((o) => new Date(o.createdAt).getTime() >= cutoff)
+  }
+
+  const computePrevPeriod = (ordersList, days) => {
+    const start = arStartOfDay(days * 2)
+    const end   = arStartOfDay(days)
+    return ordersList.filter((o) => {
+      const t = new Date(o.createdAt).getTime()
+      return t >= start && t < end
+    })
+  }
+
   const data = useMemo(() => {
-    const cutoff = Date.now() - periodo * 24 * 60 * 60 * 1000
-    const ordersInPeriod = ordersWithClient.filter(
-      (o) => new Date(o.createdAt).getTime() >= cutoff,
-    )
+    const ordersInPeriod = computePeriod(ordersWithClient, periodo)
+    const ordersPrev     = computePrevPeriod(ordersWithClient, periodo)
 
     // Top productos
     const productMap = new Map()
     ordersInPeriod.forEach((o) => {
-      ;(o.items || []).forEach((item) => {
+      (o.items || []).forEach((item) => {
         const cur = productMap.get(item.productId) || { units: 0, revenue: 0 }
         cur.units += Number(item.qty) || 0
         cur.revenue += (Number(item.qty) || 0) * (Number(item.unitPrice) || 0)
@@ -4287,9 +4489,15 @@ function ReportesSection({ orders, products, clients, ordersWithClient }) {
     const topProducts = [...productMap.entries()]
       .map(([pid, v]) => {
         const p = products.find((x) => x.id === pid)
-        return { id: pid, name: p?.name || `Producto ${pid}`, sku: p?.sku || '—', ...v }
+        return {
+          id: pid,
+          name: p?.name || `Producto ${pid}`,
+          sku: p?.sku || '—',
+          category: p?.category || '—',
+          ...v,
+        }
       })
-      .sort((a, b) => b.units - a.units)
+      .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10)
 
     // Top clientes
@@ -4303,36 +4511,117 @@ function ReportesSection({ orders, products, clients, ordersWithClient }) {
     const topClients = [...clientMap.entries()]
       .map(([cid, v]) => {
         const c = clients.find((x) => x.id === cid)
-        return { id: cid, name: c?.businessName || 'Desconocido', ...v }
+        return { id: cid, name: c?.businessName || 'Desconocido', tier: c?.tier || 'Asociado', ...v }
       })
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10)
 
-    // Totales
-    const revenue = ordersInPeriod.reduce((s, o) => s + (Number(o.total) || 0), 0)
-    const avgTicket = ordersInPeriod.length > 0 ? Math.round(revenue / ordersInPeriod.length) : 0
+    // Categories breakdown
+    const categoryMap = new Map()
+    ordersInPeriod.forEach((o) => {
+      (o.items || []).forEach((item) => {
+        const p = products.find((x) => x.id === item.productId)
+        const cat = p?.category || 'Sin categoría'
+        const cur = categoryMap.get(cat) || 0
+        categoryMap.set(cat, cur + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0))
+      })
+    })
+    const categories = [...categoryMap.entries()]
+      .map(([name, revenue]) => ({ name, revenue }))
+      .sort((a, b) => b.revenue - a.revenue)
+
+    // Totales y comparación
+    const revenue       = ordersInPeriod.reduce((s, o) => s + (Number(o.total) || 0), 0)
+    const revenuePrev   = ordersPrev.reduce((s, o) => s + (Number(o.total) || 0), 0)
+    const avgTicket     = ordersInPeriod.length > 0 ? Math.round(revenue / ordersInPeriod.length) : 0
+    const avgTicketPrev = ordersPrev.length > 0 ? Math.round(revenuePrev / ordersPrev.length) : 0
     const uniqueClients = new Set(ordersInPeriod.map((o) => o.clientId)).size
+    const uniqueClientsPrev = new Set(ordersPrev.map((o) => o.clientId)).size
+
+    const delta = (curr, prev) => {
+      if (!prev || prev === 0) return curr > 0 ? 100 : 0
+      return Math.round(((curr - prev) / prev) * 100)
+    }
+
+    // Daily trend buckets (for chart)
+    const dayBuckets = []
+    for (let i = periodo - 1; i >= 0; i--) {
+      const ts = arStartOfDay(i)
+      dayBuckets.push({ ts, value: 0, label: arDateOf(new Date(ts)).slice(5) }) // 'MM-DD'
+    }
+    ordersInPeriod.forEach((o) => {
+      const t = new Date(o.createdAt).getTime()
+      const idx = Math.floor((t - dayBuckets[0].ts) / (24 * 60 * 60 * 1000))
+      if (idx >= 0 && idx < dayBuckets.length) {
+        dayBuckets[idx].value += Number(o.total) || 0
+      }
+    })
 
     return {
       ordersInPeriod,
+      ordersPrev,
       topProducts,
       topClients,
+      categories,
       revenue,
+      revenuePrev,
+      revenueDelta: delta(revenue, revenuePrev),
       avgTicket,
+      avgTicketDelta: delta(avgTicket, avgTicketPrev),
       uniqueClients,
+      uniqueClientsDelta: delta(uniqueClients, uniqueClientsPrev),
       orderCount: ordersInPeriod.length,
+      orderCountDelta: delta(ordersInPeriod.length, ordersPrev.length),
+      dayBuckets,
+      freq: uniqueClients > 0 ? (ordersInPeriod.length / uniqueClients).toFixed(1) : '0',
     }
   }, [ordersWithClient, products, clients, periodo])
 
+  const exportCSV = () => {
+    const headers = ['Pedido', 'Fecha', 'Cliente', 'Estado', 'Items', 'Total']
+    const rows = data.ordersInPeriod.map((o) => [
+      o.id,
+      arDateOf(o.createdAt),
+      `"${o.clientName || ''}"`,
+      o.status,
+      (o.items || []).length,
+      Number(o.total) || 0,
+    ])
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `reporte_${periodo}d_${arToday()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const renderDelta = (delta) => {
+    if (delta === 0) return <span className="px-kpi-delta" style={{ color: '#94a3b8' }}>—</span>
+    return (
+      <span className={`px-kpi-delta ${delta > 0 ? 'up' : 'down'}`}>
+        {delta > 0 ? '↑' : '↓'} {Math.abs(delta)}% vs período anterior
+      </span>
+    )
+  }
+
+  const maxDayValue = Math.max(...data.dayBuckets.map((d) => d.value), 1)
+  const maxCategoryValue = Math.max(...data.categories.map((c) => c.revenue), 1)
+  const maxProductRevenue = Math.max(...data.topProducts.map((p) => p.revenue), 1)
+  const maxClientRevenue = Math.max(...data.topClients.map((c) => c.revenue), 1)
+
   return (
-    <section className="admin-section">
-      <article className="admin-card">
-        <div className="admin-section-header">
-          <div>
-            <span className="admin-card-eyebrow">Período de análisis</span>
-            <h2>Reportes de venta</h2>
-          </div>
-          <div className="admin-segmented">
+    <section className="px-section">
+      {/* Header */}
+      <div className="px-header">
+        <div className="px-header-left">
+          <span className="px-eyebrow">Análisis</span>
+          <h2 className="px-title">Reportes de venta</h2>
+          <p className="px-subtitle">Período comparado con el anterior · Hora Argentina</p>
+        </div>
+        <div className="px-header-actions">
+          <div className="px-segmented">
             {[7, 30, 90, 180].map((d) => (
               <button
                 key={d}
@@ -4340,102 +4629,229 @@ function ReportesSection({ orders, products, clients, ordersWithClient }) {
                 className={periodo === d ? 'active' : ''}
                 onClick={() => setPeriodo(d)}
               >
-                {d} días
+                {d === 7 ? '7 días' : d === 30 ? '30 días' : d === 90 ? '3 meses' : '6 meses'}
               </button>
             ))}
           </div>
+          <button type="button" className="px-btn secondary" onClick={exportCSV} disabled={data.orderCount === 0}>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M10 3v10m0 0-3.5-3.5M10 13l3.5-3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              <path d="M4 15h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+            Exportar CSV
+          </button>
         </div>
+      </div>
 
-        <div className="admin-metrics-grid">
-          <MetricCard
-            title="Facturación"
-            value={formatCurrency(data.revenue)}
-            detail={`${data.orderCount} pedidos`}
-            tone="blue"
-          />
-          <MetricCard
-            title="Ticket promedio"
-            value={formatCurrency(data.avgTicket)}
-            detail="Promedio por pedido"
-            tone="navy"
-          />
-          <MetricCard
-            title="Clientes activos"
-            value={String(data.uniqueClients)}
-            detail="Con al menos un pedido"
-            tone="slate"
-          />
-          <MetricCard
-            title="Frecuencia"
-            value={data.uniqueClients > 0 ? (data.orderCount / data.uniqueClients).toFixed(1) : '0'}
-            detail="Pedidos por cliente"
-            tone="slate"
-          />
+      {/* KPI bar with deltas */}
+      <div className="px-kpi-bar">
+        <div className="px-kpi tone-blue">
+          <span className="px-kpi-label">Facturación</span>
+          <span className="px-kpi-value">{formatCurrency(data.revenue)}</span>
+          {renderDelta(data.revenueDelta)}
         </div>
+        <div className="px-kpi tone-violet">
+          <span className="px-kpi-label">Pedidos</span>
+          <span className="px-kpi-value">{data.orderCount}</span>
+          {renderDelta(data.orderCountDelta)}
+        </div>
+        <div className="px-kpi tone-green">
+          <span className="px-kpi-label">Ticket promedio</span>
+          <span className="px-kpi-value">{formatCurrency(data.avgTicket)}</span>
+          {renderDelta(data.avgTicketDelta)}
+        </div>
+        <div className="px-kpi tone-amber">
+          <span className="px-kpi-label">Clientes activos</span>
+          <span className="px-kpi-value">{data.uniqueClients}</span>
+          {renderDelta(data.uniqueClientsDelta)}
+        </div>
+        <div className="px-kpi tone-slate">
+          <span className="px-kpi-label">Frecuencia</span>
+          <span className="px-kpi-value">{data.freq}</span>
+          <span className="px-kpi-sub">Pedidos por cliente</span>
+        </div>
+      </div>
+
+      {/* Daily trend chart */}
+      <article className="px-card">
+        <div className="px-card-head">
+          <div>
+            <h3 className="px-card-title">Facturación diaria</h3>
+            <p className="px-card-sub">Tendencia de los últimos {periodo} días (hora Argentina)</p>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+            Pico: <strong style={{ color: '#0f172a' }}>{formatCurrency(maxDayValue)}</strong>
+          </div>
+        </div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${data.dayBuckets.length}, 1fr)`,
+          gap: 2,
+          alignItems: 'end',
+          height: 140,
+          padding: '0.5rem 0',
+        }}>
+          {data.dayBuckets.map((d, i) => {
+            const h = (d.value / maxDayValue) * 100
+            return (
+              <div
+                key={i}
+                title={`${d.label}: ${formatCurrency(d.value)}`}
+                style={{
+                  height: `${Math.max(h, d.value > 0 ? 4 : 0)}%`,
+                  background: d.value > 0 ? '#1A1FBE' : '#f1f5f9',
+                  minHeight: 1,
+                  transition: 'height 0.3s',
+                  cursor: 'pointer',
+                }}
+              />
+            )
+          })}
+        </div>
+        {periodo <= 30 && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${data.dayBuckets.length}, 1fr)`,
+            gap: 2,
+            fontSize: '0.62rem',
+            color: '#94a3b8',
+            textAlign: 'center',
+            marginTop: 4,
+          }}>
+            {data.dayBuckets.map((d, i) => (
+              <span key={i} style={{ overflow: 'hidden' }}>
+                {i % Math.max(1, Math.floor(data.dayBuckets.length / 8)) === 0 ? d.label : ''}
+              </span>
+            ))}
+          </div>
+        )}
       </article>
 
-      <div className="admin-reportes-grid">
-        <article className="admin-card">
-          <div className="admin-section-header">
+      {/* 2-column grid: products + clients */}
+      <div className="px-grid-2">
+        {/* Top productos */}
+        <article className="px-card">
+          <div className="px-card-head">
             <div>
-              <span className="admin-card-eyebrow">Productos</span>
-              <h2>Top 10 más vendidos</h2>
+              <h3 className="px-card-title">Top productos</h3>
+              <p className="px-card-sub">Los 10 que más facturaron</p>
             </div>
           </div>
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head admin-reportes-products-grid">
-              <span>#</span>
-              <span>Producto</span>
-              <span>Unidades</span>
-              <span>Facturado</span>
+          {data.topProducts.length === 0 ? (
+            <div className="px-empty">Sin ventas en el período</div>
+          ) : (
+            <div className="px-table-wrap" style={{ border: 'none' }}>
+              <table className="px-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 30 }}>#</th>
+                    <th>Producto</th>
+                    <th className="right">Unidades</th>
+                    <th className="right">Facturado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topProducts.map((p, i) => (
+                    <tr key={p.id}>
+                      <td>
+                        <span className={`px-rank-cell${i === 0 ? ' gold' : i === 1 ? ' silver' : i === 2 ? ' bronze' : ''}`}>
+                          {i + 1}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>{p.name}</div>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{p.sku} · {p.category}</div>
+                        <div className="px-progress" style={{ marginTop: 4, height: 4 }}>
+                          <span style={{ width: `${(p.revenue / maxProductRevenue) * 100}%` }} />
+                        </div>
+                      </td>
+                      <td className="right"><strong>{p.units}</strong></td>
+                      <td className="right"><span className="px-money">{formatCurrency(p.revenue)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {data.topProducts.length === 0 ? (
-              <div className="admin-empty-row">Sin ventas en el período</div>
-            ) : (
-              data.topProducts.map((p, i) => (
-                <div key={p.id} className="admin-table-row admin-reportes-products-grid">
-                  <span className="admin-rank">{i + 1}</span>
-                  <div>
-                    <strong>{p.name}</strong>
-                    <small>{p.sku}</small>
-                  </div>
-                  <strong>{p.units}</strong>
-                  <span>{formatCurrency(p.revenue)}</span>
-                </div>
-              ))
-            )}
-          </div>
+          )}
         </article>
 
-        <article className="admin-card">
-          <div className="admin-section-header">
+        {/* Top clientes */}
+        <article className="px-card">
+          <div className="px-card-head">
             <div>
-              <span className="admin-card-eyebrow">Clientes</span>
-              <h2>Top 10 facturación</h2>
+              <h3 className="px-card-title">Top clientes</h3>
+              <p className="px-card-sub">Mayor facturación del período</p>
             </div>
           </div>
-          <div className="admin-table">
-            <div className="admin-table-row admin-table-head admin-reportes-clients-grid">
-              <span>#</span>
-              <span>Cliente</span>
-              <span>Pedidos</span>
-              <span>Facturado</span>
+          {data.topClients.length === 0 ? (
+            <div className="px-empty">Sin clientes en el período</div>
+          ) : (
+            <div className="px-table-wrap" style={{ border: 'none' }}>
+              <table className="px-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 30 }}>#</th>
+                    <th>Cliente</th>
+                    <th className="right">Pedidos</th>
+                    <th className="right">Facturado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topClients.map((c, i) => (
+                    <tr key={c.id}>
+                      <td>
+                        <span className={`px-rank-cell${i === 0 ? ' gold' : i === 1 ? ' silver' : i === 2 ? ' bronze' : ''}`}>
+                          {i + 1}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>{c.name}</div>
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{c.tier}</div>
+                        <div className="px-progress" style={{ marginTop: 4, height: 4 }}>
+                          <span style={{ width: `${(c.revenue / maxClientRevenue) * 100}%` }} />
+                        </div>
+                      </td>
+                      <td className="right"><strong>{c.orders}</strong></td>
+                      <td className="right"><span className="px-money">{formatCurrency(c.revenue)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {data.topClients.length === 0 ? (
-              <div className="admin-empty-row">Sin clientes en el período</div>
-            ) : (
-              data.topClients.map((c, i) => (
-                <div key={c.id} className="admin-table-row admin-reportes-clients-grid">
-                  <span className="admin-rank">{i + 1}</span>
-                  <strong>{c.name}</strong>
-                  <span>{c.orders}</span>
-                  <strong>{formatCurrency(c.revenue)}</strong>
-                </div>
-              ))
-            )}
-          </div>
+          )}
         </article>
       </div>
+
+      {/* Categories breakdown */}
+      {data.categories.length > 0 && (
+        <article className="px-card">
+          <div className="px-card-head">
+            <div>
+              <h3 className="px-card-title">Facturación por categoría</h3>
+              <p className="px-card-sub">Distribución del total facturado</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {data.categories.map((cat) => {
+              const pct = (cat.revenue / data.revenue) * 100
+              return (
+                <div key={cat.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>{cat.name}</span>
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                      <strong style={{ color: '#0f172a' }}>{formatCurrency(cat.revenue)}</strong>
+                      {' · '}{pct.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="px-progress" style={{ height: 8 }}>
+                    <span style={{ width: `${(cat.revenue / maxCategoryValue) * 100}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </article>
+      )}
     </section>
   )
 }
@@ -7264,181 +7680,271 @@ export function AdminDashboard() {
           ) : null}
 
           {activeSection === 'fidelizacion' ? (
-            <section className="admin-section">
-            <div className="admin-fidelity-summary-grid">
-              <article className="admin-card admin-fidelity-summary-card">
-                <span className="admin-card-eyebrow">Regla de acumulacion</span>
-                <strong>1 punto cada ${settings.pointsRatio?.toLocaleString('es-AR') ?? '1.000'}</strong>
-                <p>Los puntos historicos se acreditan cuando el pedido pasa a estado despachado.</p>
-              </article>
-
-              <article className="admin-card admin-fidelity-summary-card">
-                <span className="admin-card-eyebrow">Niveles activos</span>
-                <strong>{TIER_ORDER.length} niveles configurados</strong>
-                <p>Asociado, Socio, Preferencial y Estratégico con progresion automatica.</p>
-              </article>
-
-              <article className="admin-card admin-fidelity-summary-card">
-                <span className="admin-card-eyebrow">Beneficios configurados</span>
-                <strong>{tierBenefits.reduce((total, tier) => total + tier.benefits.length, 0)}</strong>
-                <p>Lineas de beneficios activas para cada nivel comercial del programa.</p>
-              </article>
-            </div>
-
-            <article className="admin-card admin-fidelity-benefits-card">
-              <div className="admin-fidelity-benefits-header">
-                <div>
-                  <h3>Beneficios por nivel</h3>
-                  <p className="admin-fidelity-helper">
-                    Define los beneficios comerciales que ve el equipo para cada jerarquia.
+            <section className="px-section">
+              {/* Header */}
+              <div className="px-header">
+                <div className="px-header-left">
+                  <span className="px-eyebrow">Programa de fidelización</span>
+                  <h2 className="px-title">Niveles y beneficios</h2>
+                  <p className="px-subtitle">
+                    1 punto cada{' '}
+                    <strong>${settings.pointsRatio?.toLocaleString('es-AR') ?? '1.000'}</strong> facturado ·
+                    Puntos se acreditan al despachar el pedido
                   </p>
                 </div>
               </div>
 
-              <div className="admin-fidelity-benefits-grid">
-                {tierBenefits.map((tier) => (
-                  <section key={tier.name} className="admin-tier-benefit-editor">
-                    <div className="admin-tier-benefit-top">
-                      <TierBadge tier={tier.name} />
-                      <div className="admin-tier-threshold-inline">
-                        <span>Umbral</span>
-                        <EditableNumberField
-                          value={settings.tierThresholds?.[tier.name] ?? 0}
-                          onCommit={(nextValue) =>
-                            updateTierThreshold(tier.name, nextValue, session.name)
-                          }
-                          suffix="pts"
-                        />
-                      </div>
+              {/* KPI bar */}
+              {(() => {
+                const tierCounts = TIER_ORDER.reduce((acc, t) => ({ ...acc, [t]: 0 }), {})
+                clientsWithTier.forEach((c) => { tierCounts[c.tier] = (tierCounts[c.tier] || 0) + 1 })
+                const totalClients = clientsWithTier.length
+                const totalPts = clientsWithTier.reduce((s, c) => s + getClientLifetimePoints(c), 0)
+                const avgPts = totalClients > 0 ? Math.round(totalPts / totalClients) : 0
+                return (
+                  <div className="px-kpi-bar">
+                    <div className="px-kpi tone-blue">
+                      <span className="px-kpi-label">Clientes en programa</span>
+                      <span className="px-kpi-value">{totalClients}</span>
+                      <span className="px-kpi-sub">{TIER_ORDER.length} niveles activos</span>
                     </div>
+                    <div className="px-kpi tone-violet">
+                      <span className="px-kpi-label">Puntos acumulados</span>
+                      <span className="px-kpi-value">{totalPts.toLocaleString('es-AR')}</span>
+                      <span className="px-kpi-sub">Total histórico del programa</span>
+                    </div>
+                    <div className="px-kpi tone-green">
+                      <span className="px-kpi-label">Promedio por cliente</span>
+                      <span className="px-kpi-value">{avgPts.toLocaleString('es-AR')} pts</span>
+                      <span className="px-kpi-sub">Saldo medio acumulado</span>
+                    </div>
+                    <div className="px-kpi tone-amber">
+                      <span className="px-kpi-label">Top nivel</span>
+                      <span className="px-kpi-value">{tierCounts[TIER_ORDER[TIER_ORDER.length - 1]]}</span>
+                      <span className="px-kpi-sub">Clientes en {TIER_ORDER[TIER_ORDER.length - 1]}</span>
+                    </div>
+                  </div>
+                )
+              })()}
 
-                    <div className="admin-tier-benefit-form">
-                      <label className="admin-form-field">
-                        <span>Beneficio de envio</span>
-                        <select
-                          value={tierBenefitConfigDrafts[tier.name]?.shippingMode ?? tier.config.shippingMode}
-                          onChange={(event) =>
-                            handleTierBenefitConfigChange(tier.name, {
-                              shippingMode: event.target.value,
-                            })
-                          }
-                        >
-                          <option value="none">Sin beneficio</option>
-                          <option value="discounted">Envio con descuento</option>
-                          <option value="free">Envio gratis</option>
-                        </select>
-                      </label>
+              {/* Distribution by tier */}
+              <article className="px-card">
+                <div className="px-card-head">
+                  <div>
+                    <h3 className="px-card-title">Distribución de clientes por nivel</h3>
+                    <p className="px-card-sub">Composición actual del programa</p>
+                  </div>
+                </div>
+                {(() => {
+                  const tierCounts = TIER_ORDER.map((t) => ({
+                    name: t,
+                    count: clientsWithTier.filter((c) => c.tier === t).length,
+                  }))
+                  const total = tierCounts.reduce((s, t) => s + t.count, 0) || 1
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                      {tierCounts.map((t) => {
+                        const pct = (t.count / total) * 100
+                        const tierKey = t.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+                        return (
+                          <div key={t.name}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <span className={`px-tier tier-${tierKey}`}>{t.name}</span>
+                              <span style={{ fontSize: '0.78rem', color: '#475569' }}>
+                                <strong style={{ color: '#0f172a' }}>{t.count}</strong> clientes · {pct.toFixed(0)}%
+                              </span>
+                            </div>
+                            <div className="px-progress" style={{ height: 8 }}>
+                              <span style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+              </article>
 
-                      {(tierBenefitConfigDrafts[tier.name]?.shippingMode ?? tier.config.shippingMode) ===
-                      'discounted' ? (
-                        <label className="admin-form-field">
-                          <span>Descuento en envio (%)</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={
-                              tierBenefitConfigDrafts[tier.name]?.shippingDiscountPercent ??
-                              tier.config.shippingDiscountPercent
-                            }
+              {/* Tier benefits configurator */}
+              <article className="px-card">
+                <div className="px-card-head">
+                  <div>
+                    <h3 className="px-card-title">Beneficios por nivel</h3>
+                    <p className="px-card-sub">Configurá los descuentos y envíos para cada jerarquía</p>
+                  </div>
+                </div>
+                <div className="px-grid-2">
+                  {tierBenefits.map((tier) => {
+                    const tierKey = tier.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+                    const shippingMode = tierBenefitConfigDrafts[tier.name]?.shippingMode ?? tier.config.shippingMode
+                    return (
+                      <section
+                        key={tier.name}
+                        style={{
+                          border: '1px solid #e2e8f0',
+                          padding: '1rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.75rem',
+                          background: '#fafbfc',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                          <span className={`px-tier tier-${tierKey}`} style={{ fontSize: '0.78rem', padding: '4px 12px' }}>
+                            {tier.name}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Umbral</span>
+                            <EditableNumberField
+                              value={settings.tierThresholds?.[tier.name] ?? 0}
+                              onCommit={(nextValue) =>
+                                updateTierThreshold(tier.name, nextValue, session.name)
+                              }
+                              suffix="pts"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="px-field">
+                          <label className="px-field-label">Envío</label>
+                          <select
+                            className="px-select"
+                            value={shippingMode}
                             onChange={(event) =>
-                              handleTierBenefitConfigChange(tier.name, {
-                                shippingDiscountPercent: Math.max(
-                                  0,
-                                  Math.min(100, Number(event.target.value) || 0),
-                                ),
-                              })
+                              handleTierBenefitConfigChange(tier.name, { shippingMode: event.target.value })
                             }
-                          />
-                        </label>
-                      ) : null}
+                          >
+                            <option value="none">Sin beneficio</option>
+                            <option value="discounted">Envío con descuento</option>
+                            <option value="free">Envío gratis</option>
+                          </select>
+                        </div>
 
-                      <div className="admin-tier-discount-grid">
-                        {PRODUCT_BENEFIT_CATEGORIES.map((category) => (
-                          <label key={category} className="admin-form-field">
-                            <span>Descuento {category} (%)</span>
+                        {shippingMode === 'discounted' && (
+                          <div className="px-field">
+                            <label className="px-field-label">Descuento en envío (%)</label>
                             <input
                               type="number"
                               min="0"
                               max="100"
+                              className="px-input"
                               value={
-                                tierBenefitConfigDrafts[tier.name]?.categoryDiscounts?.[category] ??
-                                tier.config.categoryDiscounts?.[category] ??
-                                0
+                                tierBenefitConfigDrafts[tier.name]?.shippingDiscountPercent ??
+                                tier.config.shippingDiscountPercent
                               }
                               onChange={(event) =>
-                                handleTierCategoryDiscountChange(
-                                  tier.name,
-                                  category,
-                                  event.target.value,
-                                )
+                                handleTierBenefitConfigChange(tier.name, {
+                                  shippingDiscountPercent: Math.max(0, Math.min(100, Number(event.target.value) || 0)),
+                                })
                               }
                             />
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                          </div>
+                        )}
 
-                    <div className="admin-tier-benefit-actions">
-                      <button
-                        type="button"
-                        className="admin-action-btn primary"
-                        onClick={() => handleSaveTierBenefits(tier.name)}
-                      >
-                        Guardar beneficios
-                      </button>
-                    </div>
-                  </section>
-                ))}
-              </div>
-            </article>
+                        <div>
+                          <div className="px-field-label" style={{ marginBottom: 4 }}>Descuentos por categoría (%)</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                            {PRODUCT_BENEFIT_CATEGORIES.map((category) => (
+                              <label key={category} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <span style={{ fontSize: '0.7rem', color: '#64748b' }}>{category}</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  className="px-input"
+                                  style={{ height: 30, fontSize: '0.82rem' }}
+                                  value={
+                                    tierBenefitConfigDrafts[tier.name]?.categoryDiscounts?.[category] ??
+                                    tier.config.categoryDiscounts?.[category] ??
+                                    0
+                                  }
+                                  onChange={(event) =>
+                                    handleTierCategoryDiscountChange(tier.name, category, event.target.value)
+                                  }
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
 
-            <article className="admin-card admin-fidelity-points-card">
-              <div className="admin-fidelity-benefits-header">
-                <div>
-                  <h3>Ajuste rapido de puntos</h3>
-                  <p className="admin-fidelity-helper">
-                    Busca un cliente y suma o corrige sus puntos acumulados desde esta misma vista.
-                  </p>
+                        <button
+                          type="button"
+                          className="px-btn primary"
+                          style={{ alignSelf: 'flex-start' }}
+                          onClick={() => handleSaveTierBenefits(tier.name)}
+                        >
+                          Guardar beneficios
+                        </button>
+                      </section>
+                    )
+                  })}
                 </div>
+              </article>
 
-                <label className="admin-search admin-search-wide admin-tier-client-search">
-                  <input
-                    type="text"
-                    value={tierClientSearch}
-                    onChange={(event) => setTierClientSearch(event.target.value)}
-                    placeholder="Buscar cliente por nombre, CUIT o ciudad..."
-                  />
-                </label>
-              </div>
-
-              <div className="admin-tier-client-list">
+              {/* Quick points adjustment */}
+              <article className="px-card">
+                <div className="px-card-head">
+                  <div>
+                    <h3 className="px-card-title">Ajuste rápido de puntos</h3>
+                    <p className="px-card-sub">Buscá un cliente y corregí sus puntos acumulados</p>
+                  </div>
+                  <div className="px-search" style={{ maxWidth: 320 }}>
+                    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                      <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" strokeWidth="1.6"/>
+                      <path d="m13 13 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                    </svg>
+                    <input
+                      type="text"
+                      value={tierClientSearch}
+                      onChange={(event) => setTierClientSearch(event.target.value)}
+                      placeholder="Buscar cliente por nombre, CUIT o ciudad…"
+                    />
+                  </div>
+                </div>
                 {tierClients.length > 0 ? (
-                  tierClients.map((client) => (
-                    <div key={client.id} className="admin-tier-client-row">
-                      <div>
-                        <strong>{client.businessName}</strong>
-                        <span>
-                          {client.tier} · {getClientLifetimePoints(client).toLocaleString('es-AR')} pts
-                        </span>
-                      </div>
-
-                      <EditableNumberField
-                        value={getClientLifetimePoints(client)}
-                        onCommit={(nextValue) =>
-                          updateClientPoints(client.id, nextValue, session.name)
-                        }
-                        suffix="pts"
-                      />
-                    </div>
-                  ))
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #e2e8f0' }}>
+                    {tierClients.map((client) => {
+                      const tierKey = (client.tier || 'asociado').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+                      return (
+                        <div
+                          key={client.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.7rem 0.85rem',
+                            borderBottom: '1px solid #f1f5f9',
+                            gap: '1rem',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                            <strong style={{ fontSize: '0.875rem', color: '#0f172a' }}>{client.businessName}</strong>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span className={`px-tier tier-${tierKey}`} style={{ fontSize: '0.65rem' }}>{client.tier}</span>
+                              <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                                {getClientLifetimePoints(client).toLocaleString('es-AR')} pts actuales
+                              </span>
+                            </div>
+                          </div>
+                          <EditableNumberField
+                            value={getClientLifetimePoints(client)}
+                            onCommit={(nextValue) =>
+                              updateClientPoints(client.id, nextValue, session.name)
+                            }
+                            suffix="pts"
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
                 ) : (
-                  <div className="admin-stock-empty">
-                    No encontramos clientes con esa busqueda.
+                  <div className="px-empty">
+                    {tierClientSearch
+                      ? 'No encontramos clientes con esa búsqueda.'
+                      : 'Empezá a escribir el nombre, CUIT o ciudad de un cliente para ajustar sus puntos.'}
                   </div>
                 )}
-              </div>
-            </article>
+              </article>
             </section>
           ) : null}
 
