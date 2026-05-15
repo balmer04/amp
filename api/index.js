@@ -219,6 +219,9 @@ async function initDB() {
     CREATE INDEX IF NOT EXISTS idx_cotizaciones_estado ON cotizaciones(estado);
     CREATE INDEX IF NOT EXISTS idx_cotizaciones_cliente ON cotizaciones(client_json_id);
   `);
+  await pool.query(`ALTER TABLE cotizaciones ADD COLUMN IF NOT EXISTS origen VARCHAR(20) DEFAULT 'admin'`);
+  await pool.query(`
+  `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT 'admin'`);
 
@@ -1689,224 +1692,12 @@ const executeTool = async (functionName, args, pool) => {
 };
 
 app.post('/api/ai/chat', authenticateToken, async (req, res) => {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const userRole = req.user.role;
-  if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Falta cloudflare vars' });
-
-  await initDB();
-  const SYSTEM_PROMPT_ADMIN = `# INTERNAL ASSISTANT — ANDRÃ‰S MERINO PINTURERÃA CRM
-
-## ROLE AND CONTEXT
-
-You are the internal management assistant for the Andres Merino Pintureria CRM. You operate exclusively for authorized internal users. Your purpose is to support commercial and operational decision-making based on available system data.
-
-**Business:** Wholesale paint distributor with 20 branches across Argentina. Primary customers: hardware stores (ferreterías) and paint shops (pintolerías).
-
-**Available system data:** customers, orders, inventory, accounts receivable, zone-based sales reps, purchase history, outstanding debts, and sales metrics.
-
----
-
-## CURRENT USER ROLE: ADMINISTRATOR
-
-The authenticated user has **full system access**. This includes:
-
-- All customers, with no zone or sales rep filter
-- All orders: active, pending, delivered, and cancelled
-- Full inventory across all branches
-- Accounts receivable, overdue balances, and payment history
-- Performance metrics by sales rep, zone, product, and period
-- Credit settings, commercial terms, and internal policies
-- Communications, alerts, and global reports
-
-**Do not apply any visibility restrictions for this role.**
-
----
-
-## AVAILABLE FUNCTIONS
-
-### 1. Sales Analysis & Metrics
-- Interpret sales data shared by the user: tables, numbers, time periods.
-- Compare period over period, by channel, zone, or product.
-- Identify trends, anomalies, and opportunities.
-- Suggest relevant KPIs for wholesale distribution businesses.
-
-### 2. Customer & Order Management
-- Assist with searches by company name, tax ID (CUIT), assigned sales rep, or order status.
-- Flag alerts for: delayed orders, overdue debt, prolonged inactivity (+60 days without purchase).
-- Identify opportunities or risks in specific accounts.
-
-### 3. Commercial Actions
-- Detect customers with repurchase potential (30 / 60 / 90 days without buying).
-- Identify high-potential accounts with no recent activity or declining volume.
-- Suggest retention, account recovery, and up-sell strategies by category.
-- Draft follow-up messages for WhatsApp or email.
-
-### 4. Inventory & Replenishment
-- Analyze whether current order levels may anticipate stockouts on key products.
-- Identify fast-moving products with low relative stock.
-- Suggest replenishment orders based on demand history.
-
-### 5. Order Prioritization & Collections
-- Sort orders by urgency, committed delivery date, or economic value.
-- Identify accounts at risk of bad debt or systematic late payment.
-- Suggest escalated collection actions: reminder, phone call, credit suspension.
-
-### 6. Operational Queries
-- Commercial terms, credit policies, and internal deadlines.
-- Credit note procedures, returns, and invoice adjustments.
-- Inter-branch coordination, logistics, and dispatch.
-
-### 7. Communications Drafting
-- Customer message drafts: follow-ups, collections, commercial updates.
-- Meeting summaries and sales briefings.
-- Executive reports for management.
-
----
-
-## BEHAVIOR INSTRUCTIONS
-
-- **Always respond in Rioplatense Spanish (Argentina).** Use "vos" forms and local business language.
-- Tone: professional, direct, action-oriented.
-- Use bullet points and tables when they simplify reading.
-- If the user shares raw text data, process it and respond with concrete analysis.
-- If a requested data point is not available, say so clearly and suggest how to retrieve it from the system.
-- Do not repeat unnecessary information or ask clarifying questions if context is already sufficient.
-- Never share one customer's information with another user without explicit administrator authorization.
-- When facing ambiguity, ask only the minimum clarification needed to proceed.`;
-  const SYSTEM_PROMPT_CLIENTE = `# CUSTOMER-FACING ASSISTANT — ANDRÃ‰S MERINO PINTURERÃA
-
-## ROLE AND CONTEXT
-
-You are the virtual assistant for Andres Merino Pintureria, a wholesale paint distributor
-with 20 branches across Argentina. You assist registered wholesale customers —
-hardware stores (ferreterías), paint shops (pinturerías), and distributors.
-
-You operate within the **customer-facing portal only**. You have no access to internal
-systems, other customers' data, pricing databases, stock levels, or any administrative
-information. You assist the authenticated customer using only what is visible
-in their own dashboard.
-
----
-
-## CURRENT USER ROLE: CUSTOMER
-
-The authenticated user is a registered wholesale customer. They can only access:
-
-- Their own orders (history, status, pending)
-- Their own account balance and credit status
-- Their own assigned sales representative contact
-- General product catalog information (no real-time pricing or stock)
-- General commercial policies (payment terms, returns, dispatch schedules)
-
-**Never reveal, infer, or discuss:**
-- Other customers' data, orders, or accounts
-- Internal pricing structures, margins, or discount policies
-- Stock levels, warehouse data, or supply chain details
-- Sales rep performance, internal targets, or business metrics
-- Any information that belongs to the administrative or vendor side of the system
-
-If the user asks for anything outside this scope, decline politely and redirect
-to their sales rep or the appropriate channel.
-
----
-
-## AVAILABLE FUNCTIONS
-
-### 1. Product & Catalog Inquiries
-- Provide general information about product lines: paints, enamels, latex,
-  waterproofing, sealants, and accessories.
-- If the customer asks about a specific product, ask for the product code or
-  commercial name to help identify it.
-- Always clarify that final pricing and availability are confirmed by their
-  assigned sales rep or through the portal — never state prices as definitive.
-
-### 2. Order Status
-- Help the customer navigate to "My Orders" in their dashboard for real-time status.
-- If they share an order number, guide them on where to find that information
-  in their own panel.
-- If there is urgency (e.g. delayed delivery), offer to help them contact
-  logistics through the appropriate channel.
-
-### 3. Order Assistance
-- Help the customer build a draft order: product, quantity, pickup branch or
-  delivery address.
-- Always clarify that orders are subject to stock confirmation and available credit.
-- Summarize the order clearly at the end and ask for confirmation before submitting.
-- Never confirm stock availability or guarantee delivery dates.
-
-### 4. General Wholesale Queries
-- Payment terms, credit conditions, return policies, and credit note procedures.
-- Dispatch schedules by branch (general information only).
-- How to contact their assigned sales rep.
-
----
-
-## HARD LIMITS
-
-- **Never invent prices, stock levels, or delivery dates.**
-- **Never promise discounts or special terms** without explicit sales rep authorization.
-- **Never answer questions about other customers,** even indirectly
-  (e.g. "do other clients get a better price?").
-- **Never discuss internal business data** (sales figures, vendor quotas,
-  branch performance, etc.).
-- If a question falls outside the customer's own dashboard scope,
-  respond with: "That information isn't available here — I'd recommend
-  reaching out to your sales rep directly."
-
----
-
-## BEHAVIOR INSTRUCTIONS
-
-- **Always respond in Rioplatense Spanish (Argentina).** Use "vos" forms
-  and a professional but approachable tone.
-- Use short bullet lists when they help clarity.
-- If you don't have an exact answer, say so clearly and offer the right channel to get it.
-- Keep responses focused and concise — the customer is here to operate, not to browse.
-- Never volunteer information the customer didn't ask for.`;
-
-  const systemPrompt = userRole === 'admin' ? SYSTEM_PROMPT_ADMIN : SYSTEM_PROMPT_CLIENTE;
-  const tools = userRole === 'admin' ? ADMIN_TOOLS : CLIENT_TOOLS;
-  const model = '@cf/meta/llama-3.1-8b-instruct';
-
-  try {
-    const cleanMessages = req.body.messages.filter(m => m.role !== 'system');
-
-    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'system', content: systemPrompt }, ...cleanMessages], tools })
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status).json({ ok: false, error: 'Cloudflare devolvió error: ' + errText });
-    }
-    let data = await response.json();
-
-    if (data.result.tool_calls && data.result.tool_calls.length > 0) {
-      const toolCall = data.result.tool_calls[0];
-      const toolResult = await executeTool(toolCall.name, toolCall.arguments, pool);
-
-      const secondResponse = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...cleanMessages,
-            { role: 'user', content: `[Admin Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolvió:\n${toolResult}\nResponde a mi pedido usando esto.]` }
-          ]
-        })
-      });
-      data = await secondResponse.json();
-    }
-
-    res.json({ ok: true, result: { ...data.result, response: data.result.response || "" } });
-  } catch (err) {
-    console.error("AI Catch:", err);
-    res.status(500).json({ ok: false, error: 'Error general IA: ' + err.message });
+  // Legacy endpoint — use /api/ai/admin/chat or /api/ai/client/chat instead
+  const userRole = req.user?.role;
+  if (userRole === 'admin') {
+    return runSeparatedAiChat(req, res, { requiredRole: 'admin', systemPrompt: SYSTEM_PROMPT_ADMIN, tools: ADMIN_TOOLS });
   }
+  return runSeparatedAiChat(req, res, { requiredRole: 'client', systemPrompt: SYSTEM_PROMPT_CLIENTE, tools: CLIENT_TOOLS });
 });
 
 // Exportación que Vercel utiliza para instanciar el servidor Serverless
@@ -1935,11 +1726,101 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
       await appendConversationMessage(conversation.id, 'user', String(lastUserMessage.content), null);
     }
 
+    // --- INYECCIÓN DE DATOS EN TIEMPO REAL ---
+    const { rows: stateRows } = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
+    const liveState = stateRows[0]?.state_json || {};
+    const clients = Array.isArray(liveState.clients) ? liveState.clients : [];
+    const products = Array.isArray(liveState.products) ? liveState.products : [];
+    const orders = Array.isArray(liveState.orders) ? liveState.orders : [];
+
+    let dataContextBlock = '';
+
+    if (requiredRole === 'admin') {
+      const today = new Date().toISOString().split('T')[0];
+      const pendingOrders = orders.filter(o => o.status === 'Pendiente');
+      const preparingOrders = orders.filter(o => o.status === 'Preparando');
+      const todayOrders = orders.filter(o => (o.createdAt || '').startsWith(today));
+      const todayRevenue = todayOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+      const lowStockProducts = products.filter(p => (p.currentStock ?? 0) <= (p.minStock ?? 5));
+      const clientsWithDebt = clients.filter(c => (Number(c.pendingBalance) || 0) > 0);
+      const totalDebt = clientsWithDebt.reduce((s, c) => s + (Number(c.pendingBalance) || 0), 0);
+
+      dataContextBlock = `
+
+---
+
+## DATOS EN TIEMPO REAL DEL SISTEMA (actualizado al momento de esta consulta)
+
+**Resumen general:**
+- Clientes activos: ${clients.filter(c => c.status !== 'Inactivo' && c.status !== 'Bloqueado').length} de ${clients.length} totales
+- Productos en catálogo: ${products.length}
+- Pedidos pendientes de aprobación: ${pendingOrders.length}
+- Pedidos en preparación: ${preparingOrders.length}
+- Facturación de hoy (${today}): $${todayRevenue.toLocaleString('es-AR')} (${todayOrders.length} pedido/s)
+- Clientes con saldo pendiente: ${clientsWithDebt.length} — Deuda total: $${totalDebt.toLocaleString('es-AR')}
+- Productos con stock bajo o crítico: ${lowStockProducts.length}
+
+**Clientes registrados (${clients.length}):**
+${clients.map(c => `- [ID:${c.id}] ${c.businessName || c.name} | Estado: ${c.status || 'Activo'} | Saldo: $${Number(c.pendingBalance || 0).toLocaleString('es-AR')} | Límite crédito: $${Number(c.creditLimit || 0).toLocaleString('es-AR')} | Categoría: ${c.category || '-'}`).join('\n')}
+
+**Productos en catálogo (${products.length}):**
+${products.map(p => `- [ID:${p.id}] ${p.name} | SKU: ${p.sku} | Categoría: ${p.category} | Precio: $${Number(p.price || 0).toLocaleString('es-AR')} | Stock: ${p.currentStock ?? 0} (mín: ${p.minStock ?? 0})`).join('\n')}
+
+**Pedidos recientes (últimos 20):**
+${orders.slice(-20).reverse().map(o => {
+  const client = clients.find(c => c.id === o.clientId);
+  return `- [#${o.id}] ${client?.businessName || client?.name || 'Cliente desconocido'} | Estado: ${o.status} | Total: $${Number(o.total || 0).toLocaleString('es-AR')} | Fecha: ${(o.createdAt || '').split('T')[0]}`;
+}).join('\n')}
+
+**Alertas de stock bajo:**
+${lowStockProducts.length === 0 ? '- Sin alertas de stock.' : lowStockProducts.map(p => `- ${p.name} (SKU: ${p.sku}) — Stock actual: ${p.currentStock}, mínimo: ${p.minStock ?? 5}`).join('\n')}
+
+---
+
+> Estos datos son la fuente de verdad actual. Si el usuario pregunta por algo que ya está en este contexto, respondé directamente sin usar herramientas. Usá las herramientas solo para operaciones que requieran cálculos específicos o datos históricos no incluidos aquí.`;
+    } else {
+      // Contexto para cliente: solo sus propios datos
+      const userId = req.user.id;
+      // Buscar el cliente en app_state que coincida con este usuario (por email)
+      const { rows: userRows } = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
+      const userEmail = userRows[0]?.email;
+      const myClient = clients.find(c => c.email === userEmail || c.id === req.user.clientId);
+      const myOrders = myClient ? orders.filter(o => o.clientId === myClient.id) : [];
+
+      if (myClient) {
+        dataContextBlock = `
+
+---
+
+## TUS DATOS EN EL SISTEMA (actualizados al momento de esta consulta)
+
+**Tu cuenta:**
+- Razón social: ${myClient.businessName || myClient.name}
+- Estado: ${myClient.status || 'Activo'}
+- Saldo pendiente: $${Number(myClient.pendingBalance || 0).toLocaleString('es-AR')}
+- Límite de crédito: $${Number(myClient.creditLimit || 0).toLocaleString('es-AR')}
+- Categoría comercial: ${myClient.category || '-'}
+
+**Tus pedidos (${myOrders.length} en total):**
+${myOrders.length === 0 ? '- Sin pedidos registrados.' : myOrders.slice(-10).reverse().map(o => `- [#${o.id}] Estado: ${o.status} | Total: $${Number(o.total || 0).toLocaleString('es-AR')} | Fecha: ${(o.createdAt || '').split('T')[0]}`).join('\n')}
+
+**Catálogo disponible (${products.length} productos):**
+${products.map(p => `- ${p.name} | SKU: ${p.sku} | Categoría: ${p.category} | Precio: $${Number(p.price || 0).toLocaleString('es-AR')}`).join('\n')}
+
+---
+
+> Respondé solo con los datos de este cliente. No mencionés datos de otros clientes ni información interna del sistema.`;
+      }
+    }
+
+    const enrichedSystemPrompt = systemPrompt + dataContextBlock;
+    // --- FIN INYECCIÓN DE DATOS ---
+
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: [{ role: 'system', content: systemPrompt }, ...cleanMessages],
+        messages: [{ role: 'system', content: enrichedSystemPrompt }, ...cleanMessages],
         tools,
       }),
     });
@@ -1972,7 +1853,7 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
         headers: { 'Authorization': `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: enrichedSystemPrompt },
             ...cleanMessages,
             {
               role: 'user',
@@ -2067,11 +1948,25 @@ app.post('/api/admin/cuenta-corriente', authenticateToken, requireAdmin, async (
     if (!client_json_id || !tipo || monto === undefined) {
       return res.status(400).json({ ok: false, message: 'Faltan campos requeridos.' });
     }
+    const montoFloat = parseFloat(monto);
     const { rows } = await pool.query(
       `INSERT INTO cuenta_corriente (client_json_id, tipo, descripcion, monto, referencia_id, creado_por)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [client_json_id, tipo, descripcion ?? null, parseFloat(monto), referencia_id ?? null, req.user.id]
+      [client_json_id, tipo, descripcion ?? null, montoFloat, referencia_id ?? null, req.user.id]
     );
+
+    // Sincronizar pendingBalance en app_state para que el frontend vea el saldo actualizado
+    const stateResult = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
+    if (stateResult.rows[0]) {
+      const state = stateResult.rows[0].state_json;
+      const clientIdx = state.clients?.findIndex((c) => c.id === client_json_id || c.id === Number(client_json_id));
+      if (clientIdx !== undefined && clientIdx >= 0) {
+        const currentBalance = Number(state.clients[clientIdx].pendingBalance) || 0;
+        state.clients[clientIdx].pendingBalance = Math.max(0, currentBalance + montoFloat);
+        await pool.query('UPDATE app_state SET state_json = $1 WHERE id = 1', [JSON.stringify(state)]);
+      }
+    }
+
     res.status(201).json({ ok: true, movimiento: rows[0] });
   } catch (e) {
     res.status(500).json({ ok: false, message: e.message });
@@ -2268,6 +2163,64 @@ app.put('/api/admin/facturas/:id/anular', authenticateToken, requireAdmin, async
 });
 
 // ── COTIZACIONES (Quotes) ─────────────────────────────────────────────────────
+// ── COTIZACIONES CLIENTE ──────────────────────────────────────────────────────
+// El cliente puede ver sus cotizaciones y solicitar nuevas
+app.get('/api/client/cotizaciones', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const stateResult = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
+    const state = stateResult.rows[0]?.state_json || {};
+    const myClient = (state.clients || []).find((c) => c.email === req.user.email);
+    if (!myClient) return res.json({ ok: true, cotizaciones: [] });
+    const { rows } = await pool.query(
+      'SELECT * FROM cotizaciones WHERE client_json_id = $1 ORDER BY creado_at DESC LIMIT 50',
+      [myClient.id]
+    );
+    res.json({ ok: true, cotizaciones: rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
+app.post('/api/client/cotizaciones', authenticateToken, async (req, res) => {
+  try {
+    await initDB();
+    const stateResult = await pool.query('SELECT state_json FROM app_state WHERE id = 1');
+    const state = stateResult.rows[0]?.state_json || {};
+    const myClient = (state.clients || []).find((c) => c.email === req.user.email);
+    if (!myClient) return res.status(400).json({ ok: false, message: 'Cliente no encontrado.' });
+
+    const { items, notas } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ ok: false, message: 'La solicitud debe incluir al menos un producto.' });
+    }
+
+    // Numero correlativo de solicitud
+    const { rows: numRows } = await pool.query(
+      "SELECT COUNT(*) FROM cotizaciones WHERE origen = 'cliente'"
+    );
+    const numero = `SOL-${String(Number(numRows[0].count) + 1).padStart(4, '0')}`;
+
+    const vencimiento = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const { rows } = await pool.query(
+      `INSERT INTO cotizaciones (numero, client_json_id, vencimiento, estado, items, notas, origen, datos_cliente, creado_por)
+       VALUES ($1, $2, $3, 'solicitada', $4, $5, 'cliente', $6, $7) RETURNING *`,
+      [
+        numero,
+        myClient.id,
+        vencimiento,
+        JSON.stringify(items),
+        notas || null,
+        JSON.stringify({ businessName: myClient.businessName, email: myClient.email, taxId: myClient.taxId }),
+        req.user.id,
+      ]
+    );
+    res.status(201).json({ ok: true, cotizacion: rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
+});
+
 app.get('/api/admin/cotizaciones', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await initDB();

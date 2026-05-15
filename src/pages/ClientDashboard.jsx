@@ -2320,30 +2320,33 @@ function OrderHistoryPage({ clientOrders, products, onRepeatOrder, onGoToOrder }
 }
 
 // ─── Cotizaciones recibidas ─────────────────────────────────────────────────
-function ClientCotizacionesPage({ session }) {
+function ClientCotizacionesPage({ session, products }) {
   const [cotizaciones, setCotizaciones] = useState([])
   const [loading, setLoading] = useState(true)
+  // Solicitud form state
+  const [showForm, setShowForm] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [solicitudItems, setSolicitudItems] = useState([]) // [{ productId, productName, sku, qty }]
+  const [notas, setNotas] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
+  const [sendSuccess, setSendSuccess] = useState(false)
 
-  useEffect(() => {
+  const loadCotizaciones = () => {
     const token = session?.token
     if (!token) return
-    fetch('/api/admin/cotizaciones', { headers: { Authorization: `Bearer ${token}` } })
+    setLoading(true)
+    fetch('/api/client/cotizaciones', { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
-      .then((res) => {
-        if (res.ok) {
-          // Filter to only this client's quotes
-          const mine = (res.cotizaciones || []).filter(
-            (c) => String(c.client_json_id) === String(session.clientId || session.userId),
-          )
-          setCotizaciones(mine)
-        }
-      })
+      .then((res) => { if (res.ok) setCotizaciones(res.cotizaciones || []) })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [session])
+  }
+
+  useEffect(() => { loadCotizaciones() }, [session])
 
   const handleAccept = async (id) => {
-    if (!window.confirm('¿Aceptar esta cotización?')) return
+    if (!window.confirm('¿Aceptar esta cotización y convertirla en pedido?')) return
     const token = session?.token
     await fetch(`/api/admin/cotizaciones/${id}`, {
       method: 'PUT',
@@ -2364,26 +2367,231 @@ function ClientCotizacionesPage({ session }) {
     setCotizaciones((prev) => prev.map((c) => c.id === id ? { ...c, estado: 'rechazada' } : c))
   }
 
+  // Solicitud helpers
+  const filteredProducts = useMemo(() => {
+    if (!searchQ.trim()) return (products || []).slice(0, 12)
+    const q = searchQ.toLowerCase()
+    return (products || []).filter(
+      (p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+    ).slice(0, 12)
+  }, [products, searchQ])
+
+  const addProduct = (product) => {
+    setSolicitudItems((prev) => {
+      const exists = prev.find((i) => i.productId === product.id)
+      if (exists) return prev.map((i) => i.productId === product.id ? { ...i, qty: i.qty + 1 } : i)
+      return [...prev, { productId: product.id, productName: product.name, sku: product.sku, qty: 1 }]
+    })
+  }
+
+  const updateQty = (productId, qty) => {
+    const n = parseInt(qty, 10)
+    if (n <= 0) return setSolicitudItems((prev) => prev.filter((i) => i.productId !== productId))
+    setSolicitudItems((prev) => prev.map((i) => i.productId === productId ? { ...i, qty: n } : i))
+  }
+
+  const handleSend = async () => {
+    if (solicitudItems.length === 0) { setSendError('Agregá al menos un producto.'); return }
+    setSending(true); setSendError('')
+    try {
+      const res = await fetch('/api/client/cotizaciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.token}` },
+        body: JSON.stringify({ items: solicitudItems, notas }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message || 'Error al enviar')
+      setSendSuccess(true)
+      setSolicitudItems([])
+      setNotas('')
+      setSearchQ('')
+      loadCotizaciones()
+      setTimeout(() => { setSendSuccess(false); setShowForm(false) }, 3000)
+    } catch (e) {
+      setSendError(e.message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const recibidas = cotizaciones.filter((c) => c.estado === 'enviada' || c.estado === 'aceptada' || c.estado === 'rechazada' || c.estado === 'convertida' || c.estado === 'vencida')
+  const enviadas = cotizaciones.filter((c) => c.estado === 'solicitada')
+
   return (
     <section className="client-section">
+      {/* ── SOLICITAR COTIZACIÓN ─────────────────────────────────────── */}
       <article className="client-panel-card">
         <div className="client-card-header">
           <div>
-            <span className="client-card-eyebrow">Pre-venta</span>
-            <h2>Cotizaciones recibidas</h2>
+            <span className="client-card-eyebrow">Nueva solicitud</span>
+            <h2>Pedir cotización</h2>
+          </div>
+          {!showForm && (
+            <button type="button" className="client-cta-btn" onClick={() => setShowForm(true)}>
+              + Nueva solicitud
+            </button>
+          )}
+        </div>
+
+        {showForm && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+            {sendSuccess ? (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '1rem', color: '#166534', fontWeight: 600 }}>
+                ✓ Solicitud enviada. El equipo de ventas te va a responder con los precios a la brevedad.
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                    Buscá los productos que querés cotizar y agregálos. Podés incluir una nota para el equipo de ventas.
+                  </p>
+                  <input
+                    type="text"
+                    className="client-search-input"
+                    placeholder="Buscar producto por nombre o SKU…"
+                    value={searchQ}
+                    onChange={(e) => setSearchQ(e.target.value)}
+                    style={{ marginBottom: '0.75rem' }}
+                  />
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.5rem', maxHeight: '260px', overflowY: 'auto' }}>
+                    {filteredProducts.map((p) => {
+                      const inList = solicitudItems.find((i) => i.productId === p.id)
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => addProduct(p)}
+                          style={{
+                            background: inList ? '#eff6ff' : '#f8fafc',
+                            border: `1px solid ${inList ? '#93c5fd' : '#e2e8f0'}`,
+                            borderRadius: '8px',
+                            padding: '0.6rem 0.75rem',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          <div style={{ fontWeight: 600 }}>{p.name}</div>
+                          <div style={{ color: '#94a3b8' }}>SKU {p.sku} · {p.category}</div>
+                          {inList && <div style={{ color: '#1A1FBE', marginTop: '2px' }}>× {inList.qty} en lista ✓</div>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {solicitudItems.length > 0 && (
+                  <div>
+                    <p style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', marginBottom: '0.5rem' }}>
+                      Productos seleccionados ({solicitudItems.length}):
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {solicitudItems.map((item) => (
+                        <div key={item.productId} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.875rem' }}>
+                          <span style={{ flex: 1 }}>{item.productName}</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.qty}
+                            onChange={(e) => updateQty(item.productId, e.target.value)}
+                            style={{ width: '60px', padding: '0.25rem 0.4rem', border: '1px solid #e2e8f0', borderRadius: '6px', textAlign: 'center' }}
+                          />
+                          <button type="button" onClick={() => setSolicitudItems((p) => p.filter((i) => i.productId !== item.productId))} style={{ color: '#e53e3e', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '0.35rem' }}>
+                    Nota para ventas (opcional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Ej: Necesito entrega para fin de mes, consulto por volumen mayor..."
+                    value={notas}
+                    onChange={(e) => setNotas(e.target.value)}
+                    style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.6rem 0.75rem', fontSize: '0.875rem', resize: 'vertical', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {sendError && <p style={{ color: '#e53e3e', fontSize: '0.85rem' }}>{sendError}</p>}
+
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <button type="button" className="client-cta-btn ghost small" onClick={() => { setShowForm(false); setSolicitudItems([]); setNotas('') }}>
+                    Cancelar
+                  </button>
+                  <button type="button" className="client-cta-btn small" onClick={handleSend} disabled={sending || solicitudItems.length === 0}>
+                    {sending ? 'Enviando…' : 'Enviar solicitud'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {!showForm && (
+          <p style={{ fontSize: '0.875rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+            Pedí precios para los productos que te interesan. El equipo de ventas te va a responder con una cotización detallada.
+          </p>
+        )}
+      </article>
+
+      {/* ── SOLICITUDES ENVIADAS (pendientes de respuesta) ───────────── */}
+      {enviadas.length > 0 && (
+        <article className="client-panel-card">
+          <div className="client-card-header">
+            <div>
+              <span className="client-card-eyebrow">En revisión</span>
+              <h2>Solicitudes enviadas</h2>
+            </div>
+          </div>
+          <div className="client-orders-table">
+            {enviadas.map((c) => {
+              const items = Array.isArray(c.items) ? c.items : []
+              return (
+                <div key={c.id} className="client-cotizacion-card">
+                  <div className="client-cotizacion-head">
+                    <div>
+                      <strong>{c.numero}</strong>
+                      <small>Enviada el {c.creado_at?.slice(0, 10) || '—'}</small>
+                    </div>
+                    <span className="client-pill info">En revisión</span>
+                  </div>
+                  <div className="client-cotizacion-items">
+                    {items.slice(0, 4).map((it, i) => (
+                      <div key={i}><span>{it.productName} × {it.qty}</span></div>
+                    ))}
+                    {items.length > 4 && <small style={{ color: '#71717a' }}>+ {items.length - 4} productos más</small>}
+                  </div>
+                  {c.notas && <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem', fontStyle: 'italic' }}>"{c.notas}"</p>}
+                </div>
+              )
+            })}
+          </div>
+        </article>
+      )}
+
+      {/* ── COTIZACIONES RECIBIDAS ───────────────────────────────────── */}
+      <article className="client-panel-card">
+        <div className="client-card-header">
+          <div>
+            <span className="client-card-eyebrow">Propuestas recibidas</span>
+            <h2>Cotizaciones del equipo de ventas</h2>
           </div>
         </div>
 
         {loading ? (
           <p style={{ padding: '1rem', color: '#71717a' }}>Cargando…</p>
-        ) : cotizaciones.length === 0 ? (
+        ) : recibidas.length === 0 ? (
           <div className="client-empty-state">
-            <p>No tenés cotizaciones pendientes</p>
-            <small>Cuando recibas una propuesta comercial, te aparecerá acá.</small>
+            <p>Todavía no recibiste ninguna cotización</p>
+            <small>Cuando el equipo de ventas responda tu solicitud, la verás acá con el precio detallado.</small>
           </div>
         ) : (
           <div className="client-orders-table">
-            {cotizaciones.map((c) => {
+            {recibidas.map((c) => {
               const items = Array.isArray(c.items) ? c.items : []
               const vencida = c.vencimiento && new Date(c.vencimiento) < new Date()
               return (
@@ -2401,20 +2609,23 @@ function ClientCotizacionesPage({ session }) {
                       : c.estado === 'rechazada' || c.estado === 'vencida' ? 'danger'
                       : c.estado === 'enviada' ? 'info' : 'neutral'
                     }`}>
-                      {c.estado}
+                      {c.estado === 'enviada' ? 'Pendiente tu respuesta'
+                        : c.estado === 'aceptada' ? 'Aceptada'
+                        : c.estado === 'rechazada' ? 'Rechazada'
+                        : c.estado === 'convertida' ? 'Convertida en pedido'
+                        : c.estado}
                     </span>
                   </div>
                   <div className="client-cotizacion-items">
                     {items.slice(0, 3).map((it, i) => (
                       <div key={i}>
                         <span>{it.productName} × {it.qty}</span>
-                        <strong>{formatCurrency(it.subtotal || 0)}</strong>
+                        <strong>{formatCurrency(it.subtotal || it.unitPrice * it.qty || 0)}</strong>
                       </div>
                     ))}
-                    {items.length > 3 && (
-                      <small style={{ color: '#71717a' }}>+ {items.length - 3} productos más</small>
-                    )}
+                    {items.length > 3 && <small style={{ color: '#71717a' }}>+ {items.length - 3} productos más</small>}
                   </div>
+                  {c.notas && <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.5rem', fontStyle: 'italic' }}>Nota: "{c.notas}"</p>}
                   <div className="client-cotizacion-footer">
                     <div>
                       <small>Total</small>
@@ -2454,23 +2665,35 @@ function ClientCuentaCorrientePage({ session }) {
 // ─── Beneficios y promociones para el tier actual ───────────────────────────
 function BeneficiosPage({ loyaltyStatus, tierBenefitSummary, client }) {
   const [activePromos, setActivePromos] = useState([])
+  const tierName = loyaltyStatus?.currentTier?.name
 
   useEffect(() => {
+    if (!tierName) return
     try {
       const stored = JSON.parse(localStorage.getItem('nexo-promociones') || '[]')
       // Filter active and applicable to this client's tier or "todos"
       const today = new Date().toISOString().slice(0, 10)
       const applicable = stored.filter((p) =>
         p.activa &&
-        (p.alcance === 'todos' || p.tier === loyaltyStatus.currentTier.name) &&
+        (p.alcance === 'todos' || p.tier === tierName) &&
         (!p.fin || p.fin >= today),
       )
       setActivePromos(applicable)
     } catch { /* noop */ }
-  }, [loyaltyStatus.currentTier.name])
+  }, [tierName])
 
   const categoryDiscounts = tierBenefitSummary?.categoryDiscounts || {}
   const shippingMode = tierBenefitSummary?.shippingMode || 'none'
+
+  if (!loyaltyStatus?.currentTier) {
+    return (
+      <section className="client-section">
+        <article className="client-panel-card">
+          <p style={{ padding: '1rem', color: '#64748b' }}>Cargando beneficios…</p>
+        </article>
+      </section>
+    )
+  }
 
   return (
     <section className="client-section">
@@ -2558,10 +2781,8 @@ function BeneficiosPage({ loyaltyStatus, tierBenefitSummary, client }) {
 function ClientCuentaCorrienteCard({ session }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [loaded, setLoaded] = useState(false)
 
   const loadCC = () => {
-    if (loaded) return
     setLoading(true)
     const token = session?.token || null
     fetch('/api/client/cuenta-corriente', {
@@ -2569,11 +2790,16 @@ function ClientCuentaCorrienteCard({ session }) {
     })
       .then((r) => r.json())
       .then((res) => {
-        if (res.ok) { setData(res); setLoaded(true) }
+        if (res.ok) setData(res)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
+
+  useEffect(() => {
+    loadCC()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <article className="client-panel-card account-span-two">
@@ -2582,16 +2808,14 @@ function ClientCuentaCorrienteCard({ session }) {
           <span className="client-card-eyebrow">Finanzas</span>
           <h2>Cuenta corriente</h2>
         </div>
-        {!loaded ? (
-          <button type="button" className="client-cta-btn" onClick={loadCC}>
-            Ver estado de cuenta
-          </button>
-        ) : null}
+        <button type="button" className="client-cta-btn" onClick={loadCC} disabled={loading}>
+          {loading ? 'Actualizando...' : 'Actualizar'}
+        </button>
       </div>
 
-      {loading ? <p style={{ padding: '1rem', color: '#64748b' }}>Cargando...</p> : null}
+      {loading && !data ? <p style={{ padding: '1rem', color: '#64748b' }}>Cargando...</p> : null}
 
-      {loaded && data ? (
+      {data ? (
         <div>
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
             <div className="account-kpi-pill">
@@ -3339,7 +3563,7 @@ export function ClientDashboard() {
           ) : null}
 
           {activeTab === 'cotizaciones' ? (
-            <ClientCotizacionesPage session={session} />
+            <ClientCotizacionesPage session={session} products={products} />
           ) : null}
 
           {activeTab === 'cuentacorriente' ? (

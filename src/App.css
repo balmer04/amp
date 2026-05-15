@@ -2571,6 +2571,12 @@
   border-color: #f3c3be;
 }
 
+.admin-action-btn.primary {
+  background: #1A1FBE;
+  color: #fff;
+  border-color: #1A1FBE;
+}
+
 .admin-action-btn:disabled {
   opacity: 0.45;
   cursor: default;

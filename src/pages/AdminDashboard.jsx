@@ -2973,6 +2973,55 @@ function SolicitudesSection({ session, onApproved }) {
 
 // ─── Cobranzas: vista dedicada de cuentas por cobrar con aging buckets ─────
 function CobranzasSection({ clients, orders, onOpenClient }) {
+  const { session } = useAuth()
+  const [pagoModal, setPagoModal] = useState(null) // { client }
+  const [pagoForm, setPagoForm] = useState({ tipo: 'pago', monto: '', descripcion: '' })
+  const [pagoSaving, setPagoSaving] = useState(false)
+  const [pagoError, setPagoError] = useState('')
+  const [localBalances, setLocalBalances] = useState({}) // { clientId: newBalance } para update optimista
+
+  const handleOpenPago = (client) => {
+    setPagoModal(client)
+    setPagoForm({ tipo: 'pago', monto: '', descripcion: '' })
+    setPagoError('')
+  }
+
+  const handleConfirmPago = async () => {
+    if (!pagoForm.monto || isNaN(parseFloat(pagoForm.monto))) {
+      setPagoError('Ingresá un monto válido.')
+      return
+    }
+    setPagoSaving(true)
+    setPagoError('')
+    const montoFinal = pagoForm.tipo === 'pago' || pagoForm.tipo === 'nota_credito'
+      ? -Math.abs(parseFloat(pagoForm.monto))
+      : Math.abs(parseFloat(pagoForm.monto))
+    try {
+      const res = await fetch('/api/admin/cuenta-corriente', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.token}` },
+        body: JSON.stringify({
+          client_json_id: pagoModal.id,
+          tipo: pagoForm.tipo,
+          descripcion: pagoForm.descripcion || null,
+          monto: montoFinal,
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.message || 'Error al guardar')
+      // Update optimista del saldo local
+      setLocalBalances((prev) => ({
+        ...prev,
+        [pagoModal.id]: Math.max(0, (Number(pagoModal.pendingBalance) || 0) + montoFinal),
+      }))
+      setPagoModal(null)
+    } catch (e) {
+      setPagoError(e.message)
+    } finally {
+      setPagoSaving(false)
+    }
+  }
+
   const data = useMemo(() => {
     const debtors = clients.filter((c) => Number(c.pendingBalance || 0) > 0)
     const now = Date.now()
@@ -3060,8 +3109,9 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
               <span></span>
             </div>
             {data.debtors.slice(0, 30).map((c) => {
+              const displayBalance = localBalances[c.id] !== undefined ? localBalances[c.id] : c.debtAmount
               const usage = c.creditLimit > 0
-                ? Math.round((c.debtAmount / c.creditLimit) * 100)
+                ? Math.round((displayBalance / c.creditLimit) * 100)
                 : 0
               const agingTone =
                 c.bucket === '90+' ? 'danger'
@@ -3074,18 +3124,31 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
                     <strong>{c.businessName}</strong>
                     <small>{c.taxId || c.email}</small>
                   </div>
-                  <strong>{formatCurrency(c.debtAmount)}</strong>
+                  <strong style={{ color: displayBalance > 0 ? '#e53e3e' : '#38a169' }}>
+                    {localBalances[c.id] !== undefined && localBalances[c.id] === 0
+                      ? '✓ Saldado'
+                      : formatCurrency(displayBalance)}
+                  </strong>
                   <span className={usage > 80 ? 'admin-pill danger' : 'admin-pill neutral'}>
                     {usage}%
                   </span>
                   <span className={`admin-pill ${agingTone}`}>{c.bucket} días</span>
-                  <button
-                    type="button"
-                    className="admin-action-btn neutral"
-                    onClick={() => onOpenClient(c.id)}
-                  >
-                    Abrir cliente
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button
+                      type="button"
+                      className="admin-action-btn primary"
+                      onClick={() => handleOpenPago(c)}
+                    >
+                      Registrar pago
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-action-btn neutral"
+                      onClick={() => onOpenClient(c.id)}
+                    >
+                      Ver ficha
+                    </button>
+                  </div>
                 </div>
               )
             })}
@@ -3093,6 +3156,77 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
         )}
       </article>
     </section>
+
+    {pagoModal ? (
+      <div className="admin-modal-backdrop" role="presentation" onClick={() => setPagoModal(null)}>
+        <div
+          className="admin-modal-card"
+          role="dialog"
+          aria-modal="true"
+          style={{ maxWidth: '440px' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="admin-modal-header">
+            <div>
+              <span className="admin-card-eyebrow">Cuenta corriente</span>
+              <h3>Registrar movimiento</h3>
+              <p className="admin-modal-copy">{pagoModal.businessName} · Saldo actual: {formatCurrency(Number(pagoModal.pendingBalance) || 0)}</p>
+            </div>
+            <button type="button" className="admin-modal-close" onClick={() => setPagoModal(null)}>Cerrar</button>
+          </div>
+          <div className="admin-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <label className="admin-field-label">
+              Tipo de movimiento
+              <select
+                className="admin-input"
+                value={pagoForm.tipo}
+                onChange={(e) => setPagoForm((p) => ({ ...p, tipo: e.target.value }))}
+              >
+                <option value="pago">Pago del cliente</option>
+                <option value="nota_credito">Nota de crédito</option>
+                <option value="ajuste">Ajuste de saldo</option>
+              </select>
+            </label>
+            <label className="admin-field-label">
+              Monto ($)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="admin-input"
+                placeholder="Ej: 15000"
+                value={pagoForm.monto}
+                onChange={(e) => setPagoForm((p) => ({ ...p, monto: e.target.value }))}
+              />
+            </label>
+            <label className="admin-field-label">
+              Descripción (opcional)
+              <input
+                type="text"
+                className="admin-input"
+                placeholder="Ej: Transferencia bancaria 15/05"
+                value={pagoForm.descripcion}
+                onChange={(e) => setPagoForm((p) => ({ ...p, descripcion: e.target.value }))}
+              />
+            </label>
+            {pagoError ? <p style={{ color: '#e53e3e', fontSize: '0.85rem' }}>{pagoError}</p> : null}
+          </div>
+          <div className="admin-modal-footer">
+            <button type="button" className="admin-action-btn neutral" onClick={() => setPagoModal(null)}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="admin-primary-btn"
+              onClick={handleConfirmPago}
+              disabled={pagoSaving}
+            >
+              {pagoSaving ? 'Guardando...' : 'Confirmar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
   )
 }
 
@@ -3646,12 +3780,13 @@ function AdminGlobalTopbar({ session, clients, products, orders, alerts, onLogou
 
 // ─── Cotizaciones: flujo previo al pedido ──────────────────────────────────
 const COTIZACION_ESTADOS = [
+  { id: 'solicitada', label: 'Solicitud de cliente', tone: 'warning' },
   { id: 'borrador', label: 'Borrador', tone: 'neutral' },
-  { id: 'enviada', label: 'Enviada', tone: 'info' },
+  { id: 'enviada', label: 'Enviada al cliente', tone: 'info' },
   { id: 'aceptada', label: 'Aceptada', tone: 'success' },
   { id: 'rechazada', label: 'Rechazada', tone: 'danger' },
   { id: 'vencida', label: 'Vencida', tone: 'warning' },
-  { id: 'convertida', label: 'Convertida', tone: 'success' },
+  { id: 'convertida', label: 'Convertida en pedido', tone: 'success' },
 ]
 
 function CotizacionesSection({ clients, products }) {
@@ -3730,6 +3865,9 @@ function CotizacionesSection({ clients, products }) {
     const client = clients.find((c) => String(c.id) === String(form.client_json_id))
     const { subtotal, total } = computeTotals(itemsWithName, form.descuento)
 
+    // Si es una respuesta a una solicitud de cliente, cambiar estado a 'enviada'
+    const esSolicitudCliente = editing?.estado === 'solicitada' && editing?.origen === 'cliente'
+
     const payload = {
       client_json_id: Number(form.client_json_id),
       vencimiento: form.vencimiento,
@@ -3743,6 +3881,7 @@ function CotizacionesSection({ clients, products }) {
         email: client.email,
       } : null,
       notas: form.notas || null,
+      ...(esSolicitudCliente ? { estado: 'enviada' } : {}),
     }
 
     const token = getAuthToken()
@@ -3876,8 +4015,78 @@ function CotizacionesSection({ clients, products }) {
     form.descuento,
   )
 
+  const solicitudesCliente = cotizaciones.filter((c) => c.estado === 'solicitada' && c.origen === 'cliente')
+
+  const handleResponderSolicitud = (solicitud) => {
+    // Pre-popula el form con los productos que pidió el cliente
+    const itemsConPrecio = (Array.isArray(solicitud.items) ? solicitud.items : []).map((it) => {
+      const p = products.find((x) => String(x.id) === String(it.productId))
+      return {
+        productId: String(it.productId),
+        qty: Number(it.qty) || 1,
+        unitPrice: p?.price || 0,
+      }
+    })
+    setForm({
+      client_json_id: String(solicitud.client_json_id),
+      vencimiento: (() => { const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10) })(),
+      items: itemsConPrecio.length ? itemsConPrecio : [{ productId: '', qty: 1, unitPrice: 0 }],
+      descuento: 0,
+      notas: solicitud.notas || '',
+    })
+    setEditing(solicitud)
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
     <section className="admin-section">
+      {/* ── SOLICITUDES DE CLIENTES ─────────────────────────────────── */}
+      {solicitudesCliente.length > 0 && (
+        <article className="admin-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+          <div className="admin-section-header">
+            <div>
+              <span className="admin-card-eyebrow" style={{ color: '#b45309' }}>Acción requerida</span>
+              <h2>Solicitudes de cotización de clientes ({solicitudesCliente.length})</h2>
+            </div>
+          </div>
+          <div className="admin-table">
+            <div className="admin-table-row admin-table-head" style={{ gridTemplateColumns: '1fr 1fr auto auto' }}>
+              <span>Cliente</span>
+              <span>Productos solicitados</span>
+              <span>Fecha</span>
+              <span></span>
+            </div>
+            {solicitudesCliente.map((s) => {
+              const clientObj = clients.find((c) => c.id === s.client_json_id || c.id === Number(s.client_json_id))
+              const items = Array.isArray(s.items) ? s.items : []
+              return (
+                <div key={s.id} className="admin-table-row" style={{ gridTemplateColumns: '1fr 1fr auto auto', alignItems: 'center' }}>
+                  <div>
+                    <strong>{clientObj?.businessName || s.datos_cliente?.businessName || `Cliente #${s.client_json_id}`}</strong>
+                    <small>{s.numero}</small>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#374151' }}>
+                    {items.slice(0, 3).map((it, i) => (
+                      <div key={i}>{it.productName} × {it.qty}</div>
+                    ))}
+                    {items.length > 3 && <small style={{ color: '#94a3b8' }}>+ {items.length - 3} más</small>}
+                  </div>
+                  <small style={{ color: '#94a3b8' }}>{s.creado_at?.slice(0, 10) || '—'}</small>
+                  <button
+                    type="button"
+                    className="admin-primary-btn"
+                    onClick={() => handleResponderSolicitud(s)}
+                  >
+                    Responder con precios
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </article>
+      )}
+
       <article className="admin-card">
         <div className="admin-section-header">
           <div>
@@ -4035,7 +4244,11 @@ function CotizacionesSection({ clients, products }) {
                 Cancelar
               </button>
               <button type="submit" className="admin-primary-btn">
-                {editing ? 'Actualizar' : 'Crear cotización'}
+                {editing?.origen === 'cliente' && editing?.estado === 'solicitada'
+                  ? 'Enviar cotización al cliente'
+                  : editing
+                  ? 'Actualizar cotización'
+                  : 'Crear cotización'}
               </button>
             </div>
           </form>
