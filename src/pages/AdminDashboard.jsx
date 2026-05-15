@@ -570,9 +570,9 @@ function SecondaryMetricCard({ title, value, detail, tone }) {
 
 function AdminAiSection() {
   return (
-    <section className="admin-section">
+    <div className="aic-page-wrap">
       <ChatAdmin />
-    </section>
+    </div>
   )
 }
 
