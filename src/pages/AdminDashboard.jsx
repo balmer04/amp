@@ -3055,6 +3055,7 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
   }, [clients, orders])
 
   return (
+    <>
     <section className="admin-section">
       <div className="admin-metrics-grid">
         <MetricCard
@@ -3227,6 +3228,7 @@ function CobranzasSection({ clients, orders, onOpenClient }) {
         </div>
       </div>
     ) : null}
+    </>
   )
 }
 
