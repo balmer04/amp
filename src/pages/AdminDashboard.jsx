@@ -30,7 +30,7 @@ const adminSections = [
   { id: 'clientes', label: 'Clientes' },
   { id: 'solicitudes', label: 'Solicitudes de acceso' },
   { id: 'cobranzas', label: 'Cobranzas' },
-  { id: 'chats', label: 'Chats' },
+  { id: 'chats', label: 'Mensajes' },
   { id: 'stock', label: 'Productos y stock' },
   { id: 'reportes', label: 'Reportes' },
   { id: 'ia', label: 'Asistente IA' },
@@ -7217,6 +7217,18 @@ export function AdminDashboard() {
 
           {activeSection === 'chats' ? (
             <section className="admin-section admin-chat-section">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: '0.85rem' }}>
+                <span style={{
+                  fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase',
+                  letterSpacing: '0.08em', color: '#94a3b8'
+                }}>Mensajería interna</span>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  Mensajes con clientes
+                </h2>
+                <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
+                  Conversaciones humanas con cada cliente. Para consultar a la IA, andá a <strong>Asistente IA</strong>.
+                </p>
+              </div>
               <div className="admin-chat-layout">
                 <article className="admin-card admin-chat-list-card">
                   <div className="admin-chat-list">
