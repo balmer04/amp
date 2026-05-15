@@ -126,7 +126,7 @@ export const DEFAULT_BRANDING_SETTINGS = {
 export const DEFAULT_CLIENTS = [
   {
     id: 1,
-    email: 'cliente@amprev.com',
+    email: 'cliente@demo.com',
     name: 'Cliente Demo',
     businessName: 'Ferreteria El Clavo Feliz',
     points: 6240,
@@ -169,7 +169,7 @@ export const DEFAULT_CLIENTS = [
   },
   {
     id: 2,
-    email: 'sanjorge@amprev.com',
+    email: 'sanjorge@demo.com',
     name: 'Pintureria San Jorge',
     businessName: 'Pintureria San Jorge',
     points: 11800,
@@ -212,7 +212,7 @@ export const DEFAULT_CLIENTS = [
   },
   {
     id: 3,
-    email: 'obrasdelsur@amprev.com',
+    email: 'obrasdelsur@demo.com',
     name: 'Obras del Sur',
     businessName: 'Obras del Sur',
     points: 980,
@@ -255,7 +255,7 @@ export const DEFAULT_CLIENTS = [
   },
   {
     id: 4,
-    email: 'colornorte@amprev.com',
+    email: 'colornorte@demo.com',
     name: 'Estudio Color Norte',
     businessName: 'Estudio Color Norte',
     points: 24800,
@@ -298,7 +298,7 @@ export const DEFAULT_CLIENTS = [
   },
   {
     id: 5,
-    email: 'corralonfaro@amprev.com',
+    email: 'corralonfaro@demo.com',
     name: 'Corralon El Faro',
     businessName: 'Corralon El Faro',
     points: 2890,
@@ -332,7 +332,7 @@ export const DEFAULT_CLIENTS = [
   },
   {
     id: 6,
-    email: 'particular.gomez@amprev.com',
+    email: 'particular.gomez@demo.com',
     name: 'Juan Gomez',
     businessName: 'Juan Gomez',
     points: 420,
@@ -375,7 +375,7 @@ export const DEFAULT_CLIENTS = [
   },
   {
     id: 7,
-    email: 'pinturasdelcentro@amprev.com',
+    email: 'pinturasdelcentro@demo.com',
     name: 'Pinturas del Centro',
     businessName: 'Pinturas del Centro',
     points: 9050,
@@ -418,7 +418,7 @@ export const DEFAULT_CLIENTS = [
   },
   {
     id: 8,
-    email: 'constructoraroca@amprev.com',
+    email: 'constructoraroca@demo.com',
     name: 'Constructora Roca',
     businessName: 'Constructora Roca',
     points: 15800,

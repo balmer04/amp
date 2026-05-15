@@ -19,9 +19,22 @@ import {
   migrateLegacyClientsToPointsModel,
 } from '../lib/businessLogic'
 
-const STORAGE_KEY = 'amp-reventa-data'
-const BROADCAST_CHANNEL_KEY = 'amp-reventa-sync'
-const PRODUCTS_STORAGE_KEY = 'productos'
+const STORAGE_KEY = 'nexoft-data'
+const BROADCAST_CHANNEL_KEY = 'nexoft-sync'
+const PRODUCTS_STORAGE_KEY = 'nexoft-productos'
+
+// One-shot legacy key migration (amp-reventa-* → nexoft-*)
+if (typeof localStorage !== 'undefined') {
+  const migrations = [
+    ['amp-reventa-data', STORAGE_KEY],
+    ['productos', PRODUCTS_STORAGE_KEY],
+  ]
+  migrations.forEach(([oldKey, newKey]) => {
+    const v = localStorage.getItem(oldKey)
+    if (v && !localStorage.getItem(newKey)) localStorage.setItem(newKey, v)
+    if (v) localStorage.removeItem(oldKey)
+  })
+}
 
 const AppDataContext = createContext(null)
 

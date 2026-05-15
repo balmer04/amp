@@ -210,8 +210,9 @@ async function initDB() {
   if (parseInt(rows[0].count, 10) === 0) {
     const hashedClient = bcrypt.hashSync('cliente123', 8);
     const hashedAdmin = bcrypt.hashSync('admin123', 8);
-    await pool.query('INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4)', ['cliente@amprev.com', hashedClient, 'client', 'Cliente Demo']);
-    await pool.query('INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4)', ['admin@amprev.com', hashedAdmin, 'admin', 'Administrador Demo']);
+    // Seed demo users (matches BRAND.demo in src/lib/brandConfig.js)
+    await pool.query('INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING', ['cliente@demo.com', hashedClient, 'client', 'Cliente Demo']);
+    await pool.query('INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING', ['admin@demo.com', hashedAdmin, 'admin', 'Administrador Demo']);
   }
   dbInitialized = true;
 }

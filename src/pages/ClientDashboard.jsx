@@ -1381,13 +1381,9 @@ function CheckoutPage({
   return (
     <section className="client-checkout-page">
       <header className="client-checkout-header">
-        <img
-          src="/branding/amp-cart.svg"
-          alt="Cadena de Pinturerias"
-          className="client-checkout-logo"
-        />
+        <span className="client-checkout-brand">Finalizar compra</span>
         <button type="button" className="client-checkout-back-btn" onClick={onBackToOrder}>
-          Volver al pedido
+          ← Volver al pedido
         </button>
       </header>
 

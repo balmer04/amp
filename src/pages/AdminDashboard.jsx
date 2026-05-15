@@ -312,7 +312,12 @@ function getClientLifetimePoints(client) {
 
 function getAuthToken() {
   try {
-    const session = JSON.parse(localStorage.getItem('amp-reventa-session') || '{}')
+    // Read from nexoft session (with backward-compat for legacy amp-reventa)
+    const stored =
+      localStorage.getItem('nexoft-session') ||
+      localStorage.getItem('amp-reventa-session') ||
+      '{}'
+    const session = JSON.parse(stored)
     return session.token || null
   } catch {
     return null

@@ -1,6 +1,19 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { getDemoLoginHint } from '../lib/brandConfig'
 
-const STORAGE_KEY = 'amp-reventa-session'
+const STORAGE_KEY = 'nexoft-session'
+const LEGACY_STORAGE_KEY = 'amp-reventa-session'
+
+// Backward-compat migration (one-shot): copy old key to new and remove old.
+function migrateLegacyKey() {
+  if (typeof localStorage === 'undefined') return
+  const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+  if (legacy && !localStorage.getItem(STORAGE_KEY)) {
+    localStorage.setItem(STORAGE_KEY, legacy)
+  }
+  if (legacy) localStorage.removeItem(LEGACY_STORAGE_KEY)
+}
+migrateLegacyKey()
 
 const AuthContext = createContext(null)
 
@@ -61,7 +74,7 @@ export function AuthProvider({ children }) {
           ok: false,
           message:
             result.message ||
-            'No encontramos esa combinacion. Proba con cliente@amprev.com o admin@amprev.com.',
+            `No encontramos esa combinación. ${getDemoLoginHint()}`,
         }
       }
 

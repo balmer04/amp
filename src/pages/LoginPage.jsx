@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { BRAND } from '../lib/brandConfig'
 
-// TODO: ocultar en producción real una vez salida la demo
-const quickAccessUsers = {
-  client: { email: 'cliente@amprev.com', password: 'cliente123' },
-  admin: { email: 'admin@amprev.com', password: 'admin123' },
-}
+// Demo quick-access (set BRAND.demo.enabled = false in brandConfig.js for production)
+const quickAccessUsers = BRAND.demo.enabled
+  ? { client: BRAND.demo.client, admin: BRAND.demo.admin }
+  : null
 
 export function LoginPage() {
   const { session, login, register, isAuthenticated, isRefreshing } = useAuth()
@@ -113,11 +113,11 @@ export function LoginPage() {
     <main className="login-page">
       <section className="login-hero">
         <div className="brand-lockup">
-          <div className="brand-badge" aria-label="Nexoft">
-            <p className="brand-overline">Soluciones tecnológicas para distribuidoras</p>
-            <h1 className="brand-name-hero">Nexoft</h1>
+          <div className="brand-badge" aria-label={BRAND.name}>
+            <p className="brand-overline">{BRAND.tagline}</p>
+            <h1 className="brand-name-hero">{BRAND.name}</h1>
           </div>
-          <p className="brand-copy">Armamos y gestionamos soluciones tecnológicas para distribuidoras. Conectamos procesos, simplificamos operaciones y escalamos con el negocio.</p>
+          <p className="brand-copy">{BRAND.description}</p>
         </div>
 
         <div className="login-card">
@@ -209,7 +209,7 @@ export function LoginPage() {
                   <input
                     type="text"
                     name="nombre"
-                    placeholder="Pintureria Ej."
+                    placeholder="Ej: Distribuidora del Sur"
                     value={requestData.nombre}
                     onChange={handleRequestChange}
                     required
