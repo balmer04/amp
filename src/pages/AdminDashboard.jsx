@@ -3435,199 +3435,217 @@ function PedidosSection({
 
   const activeStage = PIPELINE_STAGES.find(s => s.id === orderStatusFilter) || null
 
+  // Map stage ids to px-pill tone
+  const stagePillTone = { Pendiente: 'warning', Aprobado: 'info', Preparando: 'violet', Despachado: 'info', Entregado: 'success', Cancelado: 'danger' }
+
   return (
-    <section className="admin-section">
-      {/* KPIs */}
-      <div className="admin-orders-summary-grid">
-        <MetricCard title="Pedidos del día"   value={String(orderSummary.totalToday)}            detail="Ingresados hoy"          tone="navy" />
-        <MetricCard title="Facturación del día" value={formatCurrency(orderSummary.amountToday)} detail="Monto total hoy"          tone="blue" />
-        <MetricCard title="Pendientes"         value={String(orderSummary.pending)}              detail="Esperando aprobación"    tone={orderSummary.pending > 0 ? 'red' : 'slate'} />
-        <MetricCard title="En preparación"     value={String(orderSummary.preparing)}            detail="En proceso de armado"    tone={orderSummary.preparing > 0 ? 'navy' : 'slate'} />
+    <section className="px-section">
+      {/* ── KPI bar ── */}
+      <div className="px-kpi-bar">
+        <div className="px-kpi tone-blue">
+          <span className="px-kpi-label">Pedidos del día</span>
+          <span className="px-kpi-value">{orderSummary.totalToday}</span>
+          <span className="px-kpi-sub">Ingresados hoy</span>
+        </div>
+        <div className="px-kpi tone-green">
+          <span className="px-kpi-label">Facturación del día</span>
+          <span className="px-kpi-value px-money">{formatCurrency(orderSummary.amountToday)}</span>
+          <span className="px-kpi-sub">Monto total hoy</span>
+        </div>
+        <div className={`px-kpi ${orderSummary.pending > 0 ? 'tone-red' : 'tone-slate'}`}>
+          <span className="px-kpi-label">Pendientes</span>
+          <span className="px-kpi-value">{orderSummary.pending}</span>
+          <span className="px-kpi-sub">Esperando aprobación</span>
+        </div>
+        <div className={`px-kpi ${orderSummary.preparing > 0 ? 'tone-amber' : 'tone-slate'}`}>
+          <span className="px-kpi-label">En preparación</span>
+          <span className="px-kpi-value">{orderSummary.preparing}</span>
+          <span className="px-kpi-sub">En proceso de armado</span>
+        </div>
       </div>
 
-      {/* Pipeline tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+      {/* ── Status filter tabs ── */}
+      <div className="px-segmented" style={{ marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.35rem' }}>
         <button
           type="button"
+          className={orderStatusFilter === 'Todos' ? 'active' : ''}
           onClick={() => setOrderStatusFilter('Todos')}
-          style={{
-            padding: '0.45rem 0.9rem', borderRadius: '20px', fontSize: '0.82rem', fontWeight: 600,
-            border: orderStatusFilter === 'Todos' ? '2px solid #1A1FBE' : '1px solid #e2e8f0',
-            background: orderStatusFilter === 'Todos' ? '#1A1FBE' : '#fff',
-            color: orderStatusFilter === 'Todos' ? '#fff' : '#374151',
-            cursor: 'pointer',
-          }}
         >
           Todos ({ordersWithClient.length})
         </button>
         {PIPELINE_STAGES.map(stage => {
-          const isActive = orderStatusFilter === stage.id
           const count = countByStatus[stage.id] || 0
           return (
             <button
               key={stage.id}
               type="button"
+              className={orderStatusFilter === stage.id ? 'active' : ''}
               onClick={() => setOrderStatusFilter(stage.id)}
-              style={{
-                padding: '0.45rem 0.9rem', borderRadius: '20px', fontSize: '0.82rem', fontWeight: 600,
-                border: isActive ? `2px solid ${stage.color}` : '1px solid #e2e8f0',
-                background: isActive ? stage.bg : '#fff',
-                color: isActive ? stage.color : '#374151',
-                cursor: 'pointer',
-              }}
+              style={orderStatusFilter === stage.id ? { background: stage.bg, color: stage.color, borderColor: stage.color } : {}}
             >
-              {stage.label} {count > 0 ? `(${count})` : '(0)'}
+              {stage.label} ({count})
             </button>
           )
         })}
       </div>
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
-        <label className="admin-search" style={{ flex: '1 1 220px' }}>
+      {/* ── Toolbar ── */}
+      <div className="px-toolbar" style={{ marginBottom: '0.75rem' }}>
+        <label className="px-search" style={{ flex: '1 1 220px' }}>
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
+            <path d="m13 13 3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
           <input
             type="text"
             value={orderSearch}
             onChange={(e) => setOrderSearch(e.target.value)}
-            placeholder="Buscar por N° pedido o cliente..."
+            placeholder="Buscar por N° pedido o cliente…"
           />
         </label>
-        <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+        <div className="px-segmented">
           {DATE_RANGE_OPTIONS.map(opt => (
             <button
               key={opt.id}
               type="button"
+              className={dateRange === opt.id ? 'active' : ''}
               onClick={() => setDateRange(opt.id)}
-              style={{
-                padding: '0.4rem 0.75rem', fontSize: '0.8rem', fontWeight: dateRange === opt.id ? 700 : 400,
-                background: dateRange === opt.id ? '#1e293b' : '#fff',
-                color: dateRange === opt.id ? '#fff' : '#64748b',
-                border: 'none', cursor: 'pointer',
-              }}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        <button type="button" className="admin-action-btn neutral" onClick={handleExportOrdersCsv}>
+        <button type="button" className="px-btn secondary" onClick={handleExportOrdersCsv}>
           Exportar CSV
         </button>
       </div>
 
-      {/* Stage header when filtering */}
+      {/* ── Active stage context strip ── */}
       {activeStage && (
-        <div style={{ padding: '0.6rem 1rem', borderRadius: '8px', background: activeStage.bg, border: `1px solid ${activeStage.color}22`, marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <span style={{ fontWeight: 700, color: activeStage.color }}>{activeStage.label}</span>
-          <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{dateFilteredOrders.length} pedido(s)</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 0.9rem', background: activeStage.bg, border: `1px solid ${activeStage.color}55`, marginBottom: '0.75rem' }}>
+          <span style={{ fontWeight: 700, fontSize: '0.83rem', color: activeStage.color }}>{activeStage.label}</span>
+          <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{dateFilteredOrders.length} pedido(s)</span>
           {activeStage.id === 'Pendiente' && dateFilteredOrders.length > 0 && (
-            <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#92400e', background: '#fef3c7', padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+            <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '0.18rem 0.6rem', border: '1px solid #fbbf24' }}>
               ⚡ Requieren aprobación
             </span>
           )}
         </div>
       )}
 
-      <div className="admin-card">
-        <div className="admin-table">
-          <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '130px 1fr 110px 1fr 100px 130px 1fr', gap: '0.5rem', padding: '0.5rem 1rem' }}>
-            <span>N° Pedido</span>
-            <span>Cliente</span>
-            <span>Fecha</span>
-            <span>Productos</span>
-            <span>Total</span>
-            <span>Estado</span>
-            <span>Acciones</span>
-          </div>
+      {/* ── Table ── */}
+      <div className="px-card" style={{ padding: 0 }}>
+        <div className="px-table-wrap">
+          <table className="px-table">
+            <thead>
+              <tr>
+                <th>N° Pedido</th>
+                <th>Cliente</th>
+                <th>Fecha</th>
+                <th>Productos</th>
+                <th>Total</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dateFilteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="px-empty">No hay pedidos con los filtros seleccionados.</div>
+                  </td>
+                </tr>
+              ) : dateFilteredOrders.map((order) => {
+                const hasPendingBalance = Number(order.client?.pendingBalance) > 0
+                const stage = PIPELINE_STAGES.find(s => s.id === order.status)
+                const pillTone = stagePillTone[order.status] || 'neutral'
+                return (
+                  <tr key={order.id} style={hasPendingBalance ? { background: '#fff8f8' } : undefined}>
+                    {/* N° Pedido */}
+                    <td>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0f172a' }}>{order.id}</div>
+                      <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
+                        {order.isNew && (
+                          <span style={{ fontSize: '0.65rem', fontWeight: 800, background: '#e8eaff', color: '#1A1FBE', padding: '1px 5px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>NUEVO</span>
+                        )}
+                        {hasPendingBalance && (
+                          <span style={{ fontSize: '0.65rem', fontWeight: 700, background: '#fee2e2', color: '#dc2626', padding: '1px 5px' }}>Deuda</span>
+                        )}
+                      </div>
+                    </td>
 
-          {dateFilteredOrders.length === 0 ? (
-            <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-              No hay pedidos con los filtros seleccionados.
-            </div>
-          ) : dateFilteredOrders.map((order) => {
-            const hasPendingBalance = Number(order.client?.pendingBalance) > 0
-            const isAlert = hasPendingBalance && order.client?.status !== 'Activo'
-            const stage = PIPELINE_STAGES.find(s => s.id === order.status)
-            return (
-              <div
-                key={order.id}
-                className={`admin-table-row admin-order-row${isAlert ? ' alert' : ''}`}
-                style={{ display: 'grid', gridTemplateColumns: '130px 1fr 110px 1fr 100px 130px 1fr', gap: '0.5rem', padding: '0.6rem 1rem', alignItems: 'center' }}
-              >
-                {/* ID + flags */}
-                <div>
-                  <strong style={{ fontSize: '0.875rem' }}>{order.id}</strong>
-                  <div style={{ display: 'flex', gap: '4px', marginTop: '2px', flexWrap: 'wrap' }}>
-                    {order.isNew && <span className="admin-order-flag new">NUEVO</span>}
-                    {order.needsAttention && <span className="admin-order-flag warning">⚠</span>}
-                    {hasPendingBalance && <span style={{ fontSize: '0.68rem', background: '#fde8e8', color: '#c53030', padding: '1px 5px', borderRadius: '4px' }}>Deuda</span>}
-                  </div>
-                </div>
+                    {/* Cliente */}
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ width: 28, height: 28, background: '#e8eaff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: '#1A1FBE', flexShrink: 0 }}>
+                          {(order.clientName || '?')[0].toUpperCase()}
+                        </div>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#0f172a' }}>{order.clientName}</span>
+                      </div>
+                    </td>
 
-                {/* Cliente */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#1A1FBE22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: '#1A1FBE', flexShrink: 0 }}>
-                    {(order.clientName || '?')[0].toUpperCase()}
-                  </div>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{order.clientName}</span>
-                </div>
+                    {/* Fecha */}
+                    <td>
+                      <div style={{ fontSize: '0.82rem', color: '#0f172a' }}>{formatDate(order.createdAt)}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{order.relativeTime}</div>
+                    </td>
 
-                {/* Fecha */}
-                <div>
-                  <div style={{ fontSize: '0.8rem' }}>{formatDate(order.createdAt)}</div>
-                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{order.relativeTime}</div>
-                </div>
+                    {/* Productos */}
+                    <td style={{ fontSize: '0.8rem', color: '#374151', maxWidth: 260 }}>{order.productsPreview}</td>
 
-                {/* Productos */}
-                <span style={{ fontSize: '0.8rem', color: '#374151' }}>{order.productsPreview}</span>
+                    {/* Total */}
+                    <td>
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(order.total)}</span>
+                    </td>
 
-                {/* Total */}
-                <strong style={{ fontSize: '0.9rem' }}>{formatCurrency(order.total)}</strong>
+                    {/* Estado */}
+                    <td>
+                      <span
+                        className={`px-pill ${pillTone}`}
+                        style={stage ? { background: stage.bg, color: stage.color } : undefined}
+                      >
+                        {order.status}
+                      </span>
+                    </td>
 
-                {/* Estado badge */}
-                <span style={{
-                  display: 'inline-block', padding: '0.25rem 0.6rem', borderRadius: '20px',
-                  fontSize: '0.75rem', fontWeight: 700,
-                  background: stage?.bg || '#f1f5f9',
-                  color: stage?.color || '#64748b',
-                  border: `1px solid ${stage?.color || '#e2e8f0'}44`,
-                }}>
-                  {order.status}
-                </span>
-
-                {/* Acciones */}
-                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                  <button type="button" className="admin-table-link" onClick={() => setSelectedOrderId(order.id)}>
-                    Ver
-                  </button>
-                  {order.status === 'Pendiente' && (
-                    <>
-                      <button type="button" className="admin-action-btn approve" onClick={() => approveOrder(order.id, session.name)}>
-                        Aprobar
-                      </button>
-                      <button type="button" className="admin-action-btn cancel" onClick={() => handleCancelOrder(order)}>
-                        ✕
-                      </button>
-                    </>
-                  )}
-                  {order.status === 'Aprobado' && (
-                    <button type="button" className="admin-action-btn neutral" onClick={() => changeOrderStatus(order.id, 'Preparando', session.name)}>
-                      Preparar
-                    </button>
-                  )}
-                  {order.status === 'Preparando' && (
-                    <button type="button" className="admin-action-btn neutral" onClick={() => handleDispatchOrder(order)}>
-                      Despachar
-                    </button>
-                  )}
-                  {order.status === 'Despachado' && (
-                    <button type="button" className="admin-action-btn approve" onClick={() => changeOrderStatus(order.id, 'Entregado', session.name)}>
-                      Entregado
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                    {/* Acciones */}
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                        <button type="button" className="px-btn px-btn-sm secondary" onClick={() => setSelectedOrderId(order.id)}>
+                          Ver
+                        </button>
+                        {order.status === 'Pendiente' && (
+                          <>
+                            <button type="button" className="px-btn px-btn-sm success" onClick={() => approveOrder(order.id, session.name)}>
+                              Aprobar
+                            </button>
+                            <button type="button" className="px-btn px-btn-sm danger" onClick={() => handleCancelOrder(order)}>
+                              ✕
+                            </button>
+                          </>
+                        )}
+                        {order.status === 'Aprobado' && (
+                          <button type="button" className="px-btn px-btn-sm secondary" onClick={() => changeOrderStatus(order.id, 'Preparando', session.name)}>
+                            Preparar
+                          </button>
+                        )}
+                        {order.status === 'Preparando' && (
+                          <button type="button" className="px-btn px-btn-sm secondary" onClick={() => handleDispatchOrder(order)}>
+                            Despachar
+                          </button>
+                        )}
+                        {order.status === 'Despachado' && (
+                          <button type="button" className="px-btn px-btn-sm success" onClick={() => changeOrderStatus(order.id, 'Entregado', session.name)}>
+                            Entregado
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
