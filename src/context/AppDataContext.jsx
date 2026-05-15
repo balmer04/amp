@@ -22,6 +22,9 @@ import {
 const STORAGE_KEY = 'nexoft-data'
 const BROADCAST_CHANNEL_KEY = 'nexoft-sync'
 const PRODUCTS_STORAGE_KEY = 'nexoft-productos'
+// Incrementar cuando el catálogo de demo cambia para forzar re-carga del servidor
+const CATALOG_VERSION = '2'
+const CATALOG_VERSION_KEY = 'nexoft-catalog-v'
 
 // One-shot legacy key migration (amp-reventa-* → nexoft-*)
 // IMPORTANT: remove old key BEFORE setting new one to avoid quota overflow
@@ -53,6 +56,19 @@ if (typeof localStorage !== 'undefined') {
       // localStorage unavailable / private mode — ignore.
     }
   })
+
+  // Si el catálogo cambió de versión, limpiar localStorage para que el polling
+  // traiga el estado fresco del servidor en el próximo mount.
+  try {
+    const storedVersion = localStorage.getItem(CATALOG_VERSION_KEY)
+    if (storedVersion !== CATALOG_VERSION) {
+      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(PRODUCTS_STORAGE_KEY)
+      localStorage.setItem(CATALOG_VERSION_KEY, CATALOG_VERSION)
+    }
+  } catch {
+    // ignore
+  }
 }
 
 const AppDataContext = createContext(null)

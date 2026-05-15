@@ -33,6 +33,25 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret_de_rescate_temporal';
 
 let dbInitialized = false;
 
+// Catálogo genérico de distribuidora mayorista (reemplaza el anterior de pinturería)
+const DEMO_PRODUCTS_SEED = [
+  { id: 1,  category: 'Limpieza',   code: 'LMP', sku: 'LMP-LAV-5L',  brand: 'Ayudin',         name: 'Lavandina Concentrada',       detail: 'Bidón 5 lts',                currentStock: 480, price: 3200,  oldPrice: null,  note: '', accent: 'soft-mint',    badge: null },
+  { id: 2,  category: 'Limpieza',   code: 'LMP', sku: 'LMP-DET-3K',  brand: 'Skip',           name: 'Detergente en Polvo',         detail: 'Bolsa 3 kg',                 currentStock: 320, price: 4800,  oldPrice: 5200,  note: 'Precio Socio 8%', accent: 'product-clean', badge: 'Socio' },
+  { id: 3,  category: 'Limpieza',   code: 'LMP', sku: 'LMP-DES-1L',  brand: 'Procenex',       name: 'Desinfectante Multiuso',      detail: 'Botella 1 lt',               currentStock: 600, price: 1850,  oldPrice: null,  note: '', accent: 'soft-ice',     badge: null },
+  { id: 4,  category: 'Higiene',    code: 'HIG', sku: 'HIG-JAB-120', brand: 'Palmolive',      name: 'Jabon Tocador',               detail: 'Caja x 12 unidades 120g',    currentStock: 900, price: 5400,  oldPrice: null,  note: '', accent: 'soft-rose',    badge: null },
+  { id: 5,  category: 'Higiene',    code: 'HIG', sku: 'HIG-PAP-48',  brand: 'Elite',          name: 'Papel Higienico Doble Hoja',  detail: 'Pack x 48 rollos',           currentStock: 250, price: 18900, oldPrice: 20500, note: 'Precio Socio 8%', accent: 'product-clean', badge: 'Socio' },
+  { id: 6,  category: 'Higiene',    code: 'HIG', sku: 'HIG-SHA-750', brand: 'Head & Shoulders',name: 'Shampoo Anticaspa',          detail: 'Botella 750 ml',             currentStock: 420, price: 3100,  oldPrice: null,  note: '', accent: 'soft-lilac',  badge: null },
+  { id: 7,  category: 'Ferreteria', code: 'FER', sku: 'FER-CIN-48',  brand: 'Tesa',           name: 'Cinta Adhesiva Transparente', detail: 'Caja x 48 rollos 48mm',      currentStock: 180, price: 9600,  oldPrice: null,  note: '', accent: 'soft-ice',     badge: null },
+  { id: 8,  category: 'Ferreteria', code: 'FER', sku: 'FER-PIL-AA',  brand: 'Duracell',       name: 'Pilas AA Alcalinas',          detail: 'Pack x 24 unidades',         currentStock: 550, price: 7200,  oldPrice: 7800,  note: 'Precio Socio 8%', accent: 'product-clean', badge: 'Socio' },
+  { id: 9,  category: 'Ferreteria', code: 'FER', sku: 'FER-BOL-80',  brand: 'Generico',       name: 'Bolsas Residuos Negras',      detail: 'Pack x 80 unidades 60x90',   currentStock: 800, price: 2400,  oldPrice: null,  note: '', accent: 'soft-mint',    badge: null },
+  { id: 10, category: 'Almacen',    code: 'ALM', sku: 'ALM-ACE-900', brand: 'Cocinero',       name: 'Aceite de Girasol',           detail: 'Caja x 12 botellas 900 ml',  currentStock: 360, price: 28800, oldPrice: null,  note: '', accent: 'soft-rose',    badge: null },
+  { id: 11, category: 'Almacen',    code: 'ALM', sku: 'ALM-AZU-1K',  brand: 'Ledesma',        name: 'Azucar Blanca',               detail: 'Caja x 12 paquetes 1 kg',    currentStock: 500, price: 18000, oldPrice: 19500, note: 'Precio Socio 8%', accent: 'product-clean', badge: 'Socio' },
+  { id: 12, category: 'Almacen',    code: 'ALM', sku: 'ALM-HAR-1K',  brand: 'Pureza',         name: 'Harina de Trigo 000',         detail: 'Bolsa 25 kg',                currentStock: 200, price: 22500, oldPrice: null,  note: '', accent: 'soft-ice',     badge: null },
+  { id: 13, category: 'Papeleria',  code: 'PAP', sku: 'PAP-RES-A4',  brand: 'Navigator',      name: 'Resma Papel A4 75gr',         detail: 'Caja x 5 resmas 500 hojas',  currentStock: 300, price: 16500, oldPrice: null,  note: '', accent: 'soft-lilac',  badge: null },
+  { id: 14, category: 'Papeleria',  code: 'PAP', sku: 'PAP-MAR-12',  brand: 'Faber-Castell',  name: 'Marcadores Permanentes',      detail: 'Caja x 12 unidades surtidos',currentStock: 450, price: 4200,  oldPrice: 4600,  note: 'Precio Socio 8%', accent: 'product-clean', badge: 'Socio' },
+  { id: 15, category: 'Papeleria',  code: 'PAP', sku: 'PAP-CAR-50',  brand: 'Generico',       name: 'Cajas de Carton Corrugado',   detail: 'Pack x 50 unidades 40x30x25',currentStock: 180, price: 31000, oldPrice: null,  note: '', accent: 'soft-mint',    badge: null },
+];
+
 function getUserResponse(user) {
   return {
     id: user.id,
@@ -227,8 +246,6 @@ async function initDB() {
   `);
 
   // Always ensure demo accounts exist (idempotent via ON CONFLICT).
-  // This guarantees cliente@demo.com / admin@demo.com work even when the
-  // database already has other users from previous brand iterations.
   const hashedClient = bcrypt.hashSync('cliente123', 8);
   const hashedAdmin = bcrypt.hashSync('admin123', 8);
   await pool.query(
@@ -239,6 +256,36 @@ async function initDB() {
     `INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING`,
     ['admin@demo.com', hashedAdmin, 'admin', 'Administrador Demo']
   );
+
+  // ── Migración de catálogo de demo ─────────────────────────────────────────
+  // Si el app_state todavía tiene productos de pinturería (categoría 'Latex'),
+  // los reemplazamos por el catálogo genérico de distribuidora mayorista.
+  // Esto corre una sola vez después del deploy. Los pedidos y clientes se
+  // preservan si ya existen; solo se actualizan los productos.
+  try {
+    const currentState = await getAppStateRecord();
+    if (currentState && Array.isArray(currentState.products)) {
+      const hasOldCatalog = currentState.products.some(p => p.category === 'Latex' || p.category === 'Esmalte');
+      if (hasOldCatalog) {
+        currentState.products = DEMO_PRODUCTS_SEED;
+        await saveAppStateRecord(currentState);
+      }
+    } else if (!currentState) {
+      // Estado vacío: crear con seed completo
+      await saveAppStateRecord({
+        products: DEMO_PRODUCTS_SEED,
+        clients: [],
+        orders: [],
+        chats: [],
+        redemptions: [],
+        auditLog: [],
+        settings: {},
+      });
+    }
+  } catch (e) {
+    console.warn('Catalog migration skipped:', e.message);
+  }
+
   dbInitialized = true;
 }
 
