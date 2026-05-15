@@ -37,6 +37,38 @@ const adminSections = [
   { id: 'fidelizacion', label: 'Fidelización' },
   { id: 'configuracion', label: 'Configuración' },
 ]
+
+// ─── Permisos por sub-rol ────────────────────────────────────────────────────
+// 'admin'    → todo
+// 'vendedor' → operación comercial (ventas, clientes, cotizaciones, mensajes)
+// 'deposito' → solo pedidos, stock y datos básicos de clientes (para despacho)
+const ROL_SECTIONS = {
+  admin: [
+    'dashboard', 'pedidos', 'cotizaciones', 'facturacion', 'promociones',
+    'clientes', 'solicitudes', 'cobranzas', 'chats', 'stock',
+    'reportes', 'ia', 'fidelizacion', 'configuracion',
+  ],
+  vendedor: [
+    'dashboard', 'pedidos', 'cotizaciones', 'promociones',
+    'clientes', 'solicitudes', 'chats', 'stock',
+  ],
+  deposito: [
+    'dashboard', 'pedidos', 'clientes', 'stock',
+  ],
+}
+
+const ROL_LABELS = {
+  admin:    { label: 'Administrador', color: '#1A1FBE', bg: '#e8eaff' },
+  vendedor: { label: 'Vendedor',      color: '#059669', bg: '#dcfce7' },
+  deposito: { label: 'Depósito',      color: '#d97706', bg: '#fef3c7' },
+}
+
+function getAllowedSections(rol) {
+  return ROL_SECTIONS[rol] || ROL_SECTIONS.admin
+}
+function canSeeSection(rol, sectionId) {
+  return getAllowedSections(rol).includes(sectionId)
+}
 const adminSectionGroups = [
   {
     title: 'Inicio',
@@ -5803,6 +5835,13 @@ export function AdminDashboard() {
   const navigate = useNavigate()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('dashboard')
+
+  // Guard: si la sección activa no está permitida para mi rol, redirigir
+  useEffect(() => {
+    if (!canSeeSection(session.rol, activeSection)) {
+      setActiveSection('dashboard')
+    }
+  }, [session.rol, activeSection])
   const [clientSearch, setClientSearch] = useState('')
   const [clientLevelFilter, setClientLevelFilter] = useState('Todos')
   const [clientStatusFilter, setClientStatusFilter] = useState('Todos')
@@ -5831,6 +5870,9 @@ export function AdminDashboard() {
   const [facturasLoaded, setFacturasLoaded] = useState(false)
   const [facturaFiltroEstado, setFacturaFiltroEstado] = useState('todos')
   const [usuariosAdmin, setUsuariosAdmin] = useState([])
+  const [newUserForm, setNewUserForm] = useState({ name: '', email: '', password: '', rol: 'vendedor' })
+  const [newUserSaving, setNewUserSaving] = useState(false)
+  const [newUserError, setNewUserError] = useState('')
   const [usuariosLoaded, setUsuariosLoaded] = useState(false)
   const [listasPreciosData, setListasPreciosData] = useState([])
   const [listasPreciosLoaded, setListasPreciosLoaded] = useState(false)
@@ -6927,11 +6969,15 @@ export function AdminDashboard() {
           </div>
 
           <nav className="admin-sidebar-nav">
-            {adminSectionGroups.map((group) => (
+            {adminSectionGroups.map((group) => {
+              // Filtramos los items del grupo según el sub-rol del usuario
+              const allowedItems = group.items.filter((id) => canSeeSection(session.rol, id))
+              if (allowedItems.length === 0) return null
+              return (
               <div key={group.title} className="admin-sidebar-group">
                 <span className="admin-sidebar-group-title">{group.title}</span>
                 <div className="admin-sidebar-group-links">
-                  {group.items.map((sectionId) => {
+                  {allowedItems.map((sectionId) => {
                     const section = adminSections.find((entry) => entry.id === sectionId)
 
                     if (!section) {
@@ -6966,7 +7012,8 @@ export function AdminDashboard() {
                   })}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </nav>
 
           <div className="admin-sidebar-profile">
@@ -6976,6 +7023,22 @@ export function AdminDashboard() {
                 <div>
                   <strong>{session.name}</strong>
                   <small>{session.email}</small>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      marginTop: 4,
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      padding: '2px 8px',
+                      borderRadius: 2,
+                      background: (ROL_LABELS[session.rol] || ROL_LABELS.admin).bg,
+                      color: (ROL_LABELS[session.rol] || ROL_LABELS.admin).color,
+                    }}
+                  >
+                    {(ROL_LABELS[session.rol] || ROL_LABELS.admin).label}
+                  </span>
                 </div>
               </div>
               <button type="button" className="admin-profile-logout" onClick={handleLogout}>
@@ -8174,84 +8237,258 @@ export function AdminDashboard() {
                 </div>
               </article>
 
-              {/* Módulo 7 — Gestión de Usuarios / Roles */}
-              <article className="admin-card">
-                <h3>Usuarios del sistema</h3>
-                <p className="admin-config-copy">Administrá los usuarios con acceso al panel de administración.</p>
-                <button
-                  type="button"
-                  className="admin-primary-btn"
-                  style={{ marginBottom: '1rem' }}
-                  onClick={() => {
-                    if (usuariosLoaded) return
-                    fetch('/api/admin/usuarios', { headers: { Authorization: `Bearer ${getAuthToken()}` } })
-                      .then((r) => r.json())
-                      .then((data) => { if (data.ok) { setUsuariosAdmin(data.usuarios); setUsuariosLoaded(true) } })
-                      .catch(() => {})
-                  }}
-                >
-                  {usuariosLoaded ? 'Usuarios cargados' : 'Cargar usuarios'}
-                </button>
+              {/* Gestión de usuarios y roles */}
+              <article className="px-card">
+                <div className="px-card-head">
+                  <div>
+                    <h3 className="px-card-title">Usuarios y roles del sistema</h3>
+                    <p className="px-card-sub">
+                      Gestioná quién accede al panel y qué puede ver cada uno.
+                    </p>
+                  </div>
+                  {!usuariosLoaded && (
+                    <button
+                      type="button"
+                      className="px-btn primary"
+                      onClick={() => {
+                        fetch('/api/admin/usuarios', { headers: { Authorization: `Bearer ${getAuthToken()}` } })
+                          .then((r) => r.json())
+                          .then((data) => { if (data.ok) { setUsuariosAdmin(data.usuarios); setUsuariosLoaded(true) } })
+                          .catch(() => {})
+                      }}
+                    >
+                      Cargar usuarios
+                    </button>
+                  )}
+                </div>
 
-                {usuariosLoaded ? (
-                  <div className="admin-table">
-                    <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '0.5rem' }}>
-                      <span>Nombre / Email</span>
-                      <span>Rol</span>
-                      <span>Estado</span>
-                      <span>Acciones</span>
+                {usuariosLoaded && (
+                  <>
+                    {/* Leyenda de roles */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                      gap: '0.6rem',
+                      marginBottom: '1rem',
+                    }}>
+                      {[
+                        { rol: 'admin',    desc: 'Acceso completo: ve y edita todo.' },
+                        { rol: 'vendedor', desc: 'Pedidos, cotizaciones, clientes, mensajes, stock.' },
+                        { rol: 'deposito', desc: 'Sólo pedidos, stock y datos de cliente para despacho.' },
+                      ].map(({ rol, desc }) => {
+                        const meta = ROL_LABELS[rol]
+                        return (
+                          <div key={rol} style={{
+                            background: '#fff',
+                            border: `1px solid #e2e8f0`,
+                            borderLeft: `3px solid ${meta.color}`,
+                            padding: '0.65rem 0.85rem',
+                          }}>
+                            <span style={{
+                              display: 'inline-block',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              textTransform: 'uppercase',
+                              padding: '2px 8px',
+                              background: meta.bg,
+                              color: meta.color,
+                              marginBottom: 4,
+                            }}>
+                              {meta.label}
+                            </span>
+                            <div style={{ fontSize: '0.78rem', color: '#475569', lineHeight: 1.4 }}>{desc}</div>
+                          </div>
+                        )
+                      })}
                     </div>
-                    {usuariosAdmin.map((u) => (
-                      <div key={u.id} className="admin-table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
-                        <div>
-                          <strong>{u.name}</strong>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{u.email}</div>
+
+                    {/* Form crear nuevo usuario */}
+                    <div style={{
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      padding: '0.9rem',
+                      marginBottom: '1rem',
+                    }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.6rem' }}>
+                        Crear nuevo usuario
+                      </div>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1.2fr 1.2fr 1fr 1fr auto',
+                        gap: '0.5rem',
+                        alignItems: 'end',
+                      }}>
+                        <div className="px-field">
+                          <label className="px-field-label">Nombre</label>
+                          <input
+                            type="text"
+                            className="px-input"
+                            placeholder="Juan Pérez"
+                            value={newUserForm.name}
+                            onChange={(e) => setNewUserForm((f) => ({ ...f, name: e.target.value }))}
+                          />
                         </div>
-                        <select
-                          value={u.rol || 'admin'}
-                          onChange={(e) => {
-                            fetch(`/api/admin/usuarios/${u.id}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
-                              body: JSON.stringify({ rol: e.target.value }),
-                            })
-                              .then((r) => r.json())
-                              .then((data) => {
-                                if (data.ok) setUsuariosAdmin((prev) => prev.map((x) => x.id === u.id ? { ...x, rol: e.target.value } : x))
-                              })
-                              .catch(() => {})
-                          }}
-                        >
-                          <option value="superadmin">Superadmin</option>
-                          <option value="admin">Admin</option>
-                          <option value="vendedor">Vendedor</option>
-                          <option value="deposito">Depósito</option>
-                        </select>
-                        <span className={`admin-status-badge ${u.is_active ? 'aprobado' : 'cancelado'}`}>
-                          {u.is_active ? 'Activo' : 'Inactivo'}
-                        </span>
+                        <div className="px-field">
+                          <label className="px-field-label">Email</label>
+                          <input
+                            type="email"
+                            className="px-input"
+                            placeholder="juan@empresa.com"
+                            value={newUserForm.email}
+                            onChange={(e) => setNewUserForm((f) => ({ ...f, email: e.target.value }))}
+                          />
+                        </div>
+                        <div className="px-field">
+                          <label className="px-field-label">Contraseña</label>
+                          <input
+                            type="password"
+                            className="px-input"
+                            placeholder="Mín. 6 caracteres"
+                            value={newUserForm.password}
+                            onChange={(e) => setNewUserForm((f) => ({ ...f, password: e.target.value }))}
+                          />
+                        </div>
+                        <div className="px-field">
+                          <label className="px-field-label">Rol</label>
+                          <select
+                            className="px-select"
+                            value={newUserForm.rol}
+                            onChange={(e) => setNewUserForm((f) => ({ ...f, rol: e.target.value }))}
+                          >
+                            <option value="admin">Administrador</option>
+                            <option value="vendedor">Vendedor</option>
+                            <option value="deposito">Depósito</option>
+                          </select>
+                        </div>
                         <button
                           type="button"
-                          className={`admin-action-btn ${u.is_active ? 'cancel' : 'neutral'}`}
-                          onClick={() => {
-                            fetch(`/api/admin/usuarios/${u.id}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
-                              body: JSON.stringify({ is_active: !u.is_active }),
-                            })
-                              .then((r) => r.json())
-                              .then((data) => {
-                                if (data.ok) setUsuariosAdmin((prev) => prev.map((x) => x.id === u.id ? { ...x, is_active: !u.is_active } : x))
+                          className="px-btn primary"
+                          disabled={newUserSaving || !newUserForm.name || !newUserForm.email || !newUserForm.password}
+                          onClick={async () => {
+                            setNewUserSaving(true)
+                            setNewUserError('')
+                            try {
+                              const res = await fetch('/api/admin/usuarios', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                                body: JSON.stringify(newUserForm),
                               })
-                              .catch(() => {})
+                              const data = await res.json()
+                              if (!data.ok) throw new Error(data.message || 'No se pudo crear el usuario')
+                              setUsuariosAdmin((prev) => [...prev, data.usuario])
+                              setNewUserForm({ name: '', email: '', password: '', rol: 'vendedor' })
+                            } catch (e) {
+                              setNewUserError(e.message)
+                            } finally {
+                              setNewUserSaving(false)
+                            }
                           }}
                         >
-                          {u.is_active ? 'Desactivar' : 'Activar'}
+                          {newUserSaving ? 'Creando…' : '+ Crear'}
                         </button>
                       </div>
-                    ))}
-                  </div>
-                ) : null}
+                      {newUserError && (
+                        <div style={{
+                          marginTop: '0.5rem', padding: '0.4rem 0.65rem',
+                          background: '#fef2f2', border: '1px solid #fecaca',
+                          color: '#991b1b', fontSize: '0.78rem',
+                        }}>
+                          {newUserError}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tabla de usuarios existentes */}
+                    <div className="px-table-wrap">
+                      <table className="px-table">
+                        <thead>
+                          <tr>
+                            <th>Usuario</th>
+                            <th>Rol</th>
+                            <th>Estado</th>
+                            <th className="center">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {usuariosAdmin.map((u) => {
+                            const rolKey = u.rol === 'superadmin' ? 'admin' : (u.rol || 'admin')
+                            const meta = ROL_LABELS[rolKey] || ROL_LABELS.admin
+                            const isMe = u.id === session.id
+                            return (
+                              <tr key={u.id}>
+                                <td>
+                                  <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.875rem' }}>
+                                    {u.name}
+                                    {isMe && <span style={{ marginLeft: 6, fontSize: '0.65rem', color: '#1A1FBE', fontWeight: 700 }}>(vos)</span>}
+                                  </div>
+                                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{u.email}</div>
+                                </td>
+                                <td>
+                                  <select
+                                    className="px-select"
+                                    style={{ height: 28, fontSize: '0.78rem' }}
+                                    value={rolKey}
+                                    disabled={isMe}
+                                    onChange={(e) => {
+                                      fetch(`/api/admin/usuarios/${u.id}`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                                        body: JSON.stringify({ rol: e.target.value }),
+                                      })
+                                        .then((r) => r.json())
+                                        .then((data) => {
+                                          if (data.ok) setUsuariosAdmin((prev) => prev.map((x) => x.id === u.id ? { ...x, rol: e.target.value } : x))
+                                        })
+                                        .catch(() => {})
+                                    }}
+                                  >
+                                    <option value="admin">Administrador</option>
+                                    <option value="vendedor">Vendedor</option>
+                                    <option value="deposito">Depósito</option>
+                                  </select>
+                                </td>
+                                <td>
+                                  <span
+                                    style={{
+                                      fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px',
+                                      background: u.is_active ? '#dcfce7' : '#fee2e2',
+                                      color: u.is_active ? '#166534' : '#991b1b',
+                                      letterSpacing: '0.04em', textTransform: 'uppercase',
+                                    }}
+                                  >
+                                    {u.is_active ? 'Activo' : 'Inactivo'}
+                                  </span>
+                                </td>
+                                <td className="center">
+                                  <button
+                                    type="button"
+                                    className={`px-btn px-btn-sm ${u.is_active ? 'danger' : 'success'}`}
+                                    disabled={isMe}
+                                    onClick={() => {
+                                      fetch(`/api/admin/usuarios/${u.id}`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+                                        body: JSON.stringify({ is_active: !u.is_active }),
+                                      })
+                                        .then((r) => r.json())
+                                        .then((data) => {
+                                          if (data.ok) setUsuariosAdmin((prev) => prev.map((x) => x.id === u.id ? { ...x, is_active: !u.is_active } : x))
+                                        })
+                                        .catch(() => {})
+                                    }}
+                                  >
+                                    {u.is_active ? 'Desactivar' : 'Activar'}
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </article>
 
               {/* Módulo 2 — Listas de precios */}

@@ -47,7 +47,8 @@ function buildSessionFromResult(result) {
   return {
     id: result.user.id,
     email: result.user.email,
-    role: result.user.role,
+    role: result.user.role, // 'admin' | 'client'
+    rol: result.user.rol || 'admin', // sub-rol admin: 'admin' | 'vendedor' | 'deposito'
     name: result.user.name,
     token: result.token,
     profile: result.profile ?? null,

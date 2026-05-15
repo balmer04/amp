@@ -71,12 +71,31 @@ const DEMO_PRODUCTS_SEED = [
 ];
 
 function getUserResponse(user) {
+  // Normalizamos 'superadmin' legacy → 'admin'
+  const rol = user.rol === 'superadmin' ? 'admin' : (user.rol || 'admin');
   return {
     id: user.id,
     email: user.email,
     role: user.role,
+    rol, // sub-rol dentro del panel admin: admin | vendedor | deposito
     name: user.name,
     is_active: user.is_active,
+  };
+}
+
+// ─── Middleware: requiere un sub-rol específico ──────────────────────────────
+// Uso: app.get('/api/x', authenticateToken, requireRol('admin'), handler)
+function requireRol(...rolesPermitidos) {
+  return (req, res, next) => {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ ok: false, message: 'Acceso denegado.' });
+    }
+    // Normalizamos superadmin → admin
+    const userRol = req.user.rol === 'superadmin' ? 'admin' : (req.user.rol || 'admin');
+    if (!rolesPermitidos.includes(userRol)) {
+      return res.status(403).json({ ok: false, message: 'Tu rol no tiene permisos para esta acción.' });
+    }
+    next();
   };
 }
 
@@ -242,6 +261,8 @@ async function initDB() {
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT 'admin'`);
+  // Migración: 'superadmin' legacy → 'admin' (consolidamos en 3 roles: admin | vendedor | deposito)
+  await pool.query(`UPDATE users SET rol = 'admin' WHERE rol = 'superadmin'`);
 
   // Solicitudes de acceso de nuevos clientes
   await pool.query(`
@@ -502,7 +523,7 @@ app.post('/api/auth/login', async (req, res) => {
     await ensureUserProfile(user.id, { business_name: user.name });
     await pool.query('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1', [user.id]);
 
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '12h' });
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, rol: (user.rol === 'superadmin' ? 'admin' : (user.rol || 'admin')), name: user.name }, JWT_SECRET, { expiresIn: '12h' });
     const profile = await getUserProfile(user.id);
     res.json({ ok: true, token, user: getUserResponse(user), profile });
   } catch (error) {
@@ -566,7 +587,7 @@ app.post('/api/auth/register', async (req, res) => {
     await ensureUserProfile(user.id, profilePayload);
     await syncRegisteredClientIntoAppState(user, profilePayload);
 
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '12h' });
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, rol: (user.rol === 'superadmin' ? 'admin' : (user.rol || 'admin')), name: user.name }, JWT_SECRET, { expiresIn: '12h' });
     const profile = await getUserProfile(user.id);
 
     return res.status(201).json({
@@ -582,7 +603,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // ── Admin: alta de cliente con cuenta de acceso ───────────────────────────────
-app.post('/api/admin/clients', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/clients', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const {
@@ -742,7 +763,7 @@ app.post('/api/auth/request-access', async (req, res) => {
 });
 
 // ── Admin: gestión de solicitudes ────────────────────────────────────────────
-app.get('/api/admin/client-requests', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/client-requests', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const status = req.query.status || 'pending';
@@ -761,7 +782,7 @@ app.get('/api/admin/client-requests', authenticateToken, requireAdmin, async (re
   }
 });
 
-app.post('/api/admin/client-requests/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/client-requests/:id/approve', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const requestId = Number(req.params.id);
@@ -852,7 +873,7 @@ app.post('/api/admin/client-requests/:id/approve', authenticateToken, requireAdm
   }
 });
 
-app.post('/api/admin/client-requests/:id/reject', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/client-requests/:id/reject', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const requestId = Number(req.params.id);
@@ -1924,7 +1945,7 @@ ${products.map(p => `- ${p.name} | SKU: ${p.sku} | Categoría: ${p.category} | P
   }
 }
 
-app.post('/api/ai/admin/chat', authenticateToken, async (req, res) => {
+app.post('/api/ai/admin/chat', authenticateToken, requireRol('admin'), async (req, res) => {
   return runSeparatedAiChat(req, res, {
     requiredRole: 'admin',
     systemPrompt: SYSTEM_PROMPT_ADMIN,
@@ -1941,7 +1962,7 @@ app.post('/api/ai/client/chat', authenticateToken, async (req, res) => {
 });
 
 // ── CUENTA CORRIENTE ────────────────────────────────────────────────────────
-app.get('/api/admin/cuenta-corriente/:clientId', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/cuenta-corriente/:clientId', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const clientId = parseInt(req.params.clientId, 10);
@@ -1961,7 +1982,7 @@ app.get('/api/admin/cuenta-corriente/:clientId', authenticateToken, requireAdmin
   }
 });
 
-app.post('/api/admin/cuenta-corriente', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/cuenta-corriente', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { client_json_id, tipo, descripcion, monto, referencia_id } = req.body;
@@ -1993,7 +2014,7 @@ app.post('/api/admin/cuenta-corriente', authenticateToken, requireAdmin, async (
   }
 });
 
-app.delete('/api/admin/cuenta-corriente/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.delete('/api/admin/cuenta-corriente/:id', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     await pool.query('DELETE FROM cuenta_corriente WHERE id = $1', [req.params.id]);
@@ -2004,7 +2025,7 @@ app.delete('/api/admin/cuenta-corriente/:id', authenticateToken, requireAdmin, a
 });
 
 // ── STOCK MOVIMIENTOS ────────────────────────────────────────────────────────
-app.get('/api/admin/stock-movimientos/:productoId', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/stock-movimientos/:productoId', authenticateToken, requireAdmin, requireRol('admin','vendedor','deposito'), async (req, res) => {
   try {
     await initDB();
     const { rows } = await pool.query(
@@ -2022,7 +2043,7 @@ app.get('/api/admin/stock-movimientos/:productoId', authenticateToken, requireAd
   }
 });
 
-app.post('/api/admin/stock-movimientos', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/stock-movimientos', authenticateToken, requireAdmin, requireRol('admin','vendedor','deposito'), async (req, res) => {
   try {
     await initDB();
     const { producto_json_id, tipo, cantidad, motivo, referencia_id } = req.body;
@@ -2041,7 +2062,7 @@ app.post('/api/admin/stock-movimientos', authenticateToken, requireAdmin, async 
 });
 
 // ── LISTAS DE PRECIOS ────────────────────────────────────────────────────────
-app.get('/api/admin/listas-precios', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/listas-precios', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { rows } = await pool.query('SELECT * FROM listas_precios ORDER BY nombre ASC');
@@ -2051,7 +2072,7 @@ app.get('/api/admin/listas-precios', authenticateToken, requireAdmin, async (req
   }
 });
 
-app.post('/api/admin/listas-precios', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/listas-precios', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { nombre, descripcion, activa } = req.body;
@@ -2066,7 +2087,7 @@ app.post('/api/admin/listas-precios', authenticateToken, requireAdmin, async (re
   }
 });
 
-app.put('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { nombre, descripcion, activa } = req.body;
@@ -2082,7 +2103,7 @@ app.put('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, async 
   }
 });
 
-app.delete('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.delete('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     await pool.query('DELETE FROM listas_precios WHERE id = $1', [req.params.id]);
@@ -2092,7 +2113,7 @@ app.delete('/api/admin/listas-precios/:id', authenticateToken, requireAdmin, asy
   }
 });
 
-app.get('/api/admin/listas-precios/:id/precios', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/listas-precios/:id/precios', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { rows } = await pool.query(
@@ -2105,7 +2126,7 @@ app.get('/api/admin/listas-precios/:id/precios', authenticateToken, requireAdmin
   }
 });
 
-app.post('/api/admin/listas-precios/:listId/precios', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/listas-precios/:listId/precios', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { producto_json_id, precio } = req.body;
@@ -2124,7 +2145,7 @@ app.post('/api/admin/listas-precios/:listId/precios', authenticateToken, require
 });
 
 // ── FACTURAS ─────────────────────────────────────────────────────────────────
-app.get('/api/admin/facturas', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/facturas', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { client_id, estado, tipo } = req.query;
@@ -2141,7 +2162,7 @@ app.get('/api/admin/facturas', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
-app.post('/api/admin/facturas', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/facturas', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { tipo, client_json_id, pedido_json_id, subtotal, iva, total, items, datos_cliente } = req.body;
@@ -2168,7 +2189,7 @@ app.post('/api/admin/facturas', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-app.put('/api/admin/facturas/:id/anular', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/facturas/:id/anular', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { rows } = await pool.query(
@@ -2241,7 +2262,7 @@ app.post('/api/client/cotizaciones', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/admin/cotizaciones', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/cotizaciones', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const { estado } = req.query;
@@ -2259,7 +2280,7 @@ app.get('/api/admin/cotizaciones', authenticateToken, requireAdmin, async (req, 
   }
 });
 
-app.post('/api/admin/cotizaciones', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/cotizaciones', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const {
@@ -2312,7 +2333,7 @@ app.post('/api/admin/cotizaciones', authenticateToken, requireAdmin, async (req,
   }
 });
 
-app.get('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const { rows } = await pool.query('SELECT * FROM cotizaciones WHERE id = $1', [req.params.id]);
@@ -2323,7 +2344,7 @@ app.get('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (r
   }
 });
 
-app.put('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const {
@@ -2359,7 +2380,7 @@ app.put('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (r
   }
 });
 
-app.delete('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.delete('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { rowCount } = await pool.query('DELETE FROM cotizaciones WHERE id = $1', [req.params.id]);
@@ -2371,7 +2392,7 @@ app.delete('/api/admin/cotizaciones/:id', authenticateToken, requireAdmin, async
 });
 
 // Convertir cotización en pedido (graba el orderId en la cotización y marca como convertida)
-app.post('/api/admin/cotizaciones/:id/convertir', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/cotizaciones/:id/convertir', authenticateToken, requireAdmin, requireRol('admin','vendedor'), async (req, res) => {
   try {
     await initDB();
     const { pedidoId } = req.body;
@@ -2389,7 +2410,7 @@ app.post('/api/admin/cotizaciones/:id/convertir', authenticateToken, requireAdmi
 });
 
 // ── USUARIOS ADMIN (Roles) ────────────────────────────────────────────────────
-app.get('/api/admin/usuarios', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/usuarios', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { rows } = await pool.query(
@@ -2401,7 +2422,7 @@ app.get('/api/admin/usuarios', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
-app.post('/api/admin/usuarios', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/usuarios', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { email, name, password, rol } = req.body;
@@ -2419,7 +2440,7 @@ app.post('/api/admin/usuarios', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, requireRol('admin'), async (req, res) => {
   try {
     await initDB();
     const { name, rol, is_active, password } = req.body;
