@@ -2987,6 +2987,414 @@ const DATE_RANGE_OPTIONS = [
   { id: 'todo',   label: 'Todos' },
 ]
 
+// ─── ClientesSection ─────────────────────────────────────────────────────────
+function ClientesSection({
+  clientsWithTier,
+  filteredClients,
+  clientSummary,
+  clientSearch, setClientSearch,
+  clientLevelFilter, setClientLevelFilter,
+  clientStatusFilter, setClientStatusFilter,
+  clientQuickFilter, setClientQuickFilter,
+  clientSort, toggleClientSort, handleClientSortSelect,
+  updateClientStatus,
+  setSelectedClientId,
+  setEditingClientId,
+  setIsCreatingClient,
+  setPaymentClientId,
+  setQuickNoteClientId,
+  setAiClientId,
+  handleExportClientsCsv,
+  deleteClient,
+  session,
+}) {
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkAction, setBulkAction] = useState('')
+
+  const toggleSelect = (id) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
+  const toggleAll = () => {
+    if (selectedIds.size === filteredClients.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredClients.map((c) => c.id)))
+    }
+  }
+
+  const handleBulkApply = () => {
+    if (!bulkAction || selectedIds.size === 0) return
+    const ids = [...selectedIds]
+    if (bulkAction === 'bloquear') {
+      ids.forEach((id) => updateClientStatus(id, 'Bloqueado', session.name))
+    } else if (bulkAction === 'activar') {
+      ids.forEach((id) => updateClientStatus(id, 'Activo', session.name))
+    } else if (bulkAction === 'exportar') {
+      handleExportClientsCsv()
+    }
+    setSelectedIds(new Set())
+    setBulkAction('')
+  }
+
+  const STATUS_META = {
+    Activo:   { cls: 'cs-status-badge active',   label: 'Activo' },
+    Inactivo: { cls: 'cs-status-badge inactive',  label: 'Inactivo' },
+    Bloqueado:{ cls: 'cs-status-badge blocked',   label: 'Bloqueado' },
+  }
+
+  const QUICK_FILTERS = [
+    { id: 'Todos',              label: 'Todos',              count: clientSummary.total },
+    { id: 'Activos',            label: 'Activos',            count: clientSummary.active },
+    { id: 'En riesgo',          label: 'En riesgo',          count: clientSummary.risk },
+    { id: 'Inactivos',          label: 'Inactivos',          count: clientSummary.inactive },
+    { id: 'Con saldo pendiente',label: 'Con deuda',          count: clientSummary.withDebtClients },
+    { id: 'Bloqueados',         label: 'Bloqueados',         count: clientSummary.blocked },
+  ]
+
+  const sortIcon = (key) => {
+    if (clientSort.key !== key) return <span className="cs-sort-icon">↕</span>
+    return <span className="cs-sort-icon active">{clientSort.direction === 'asc' ? '↑' : '↓'}</span>
+  }
+
+  return (
+    <section className="admin-section cs-section">
+      {/* ── KPI bar ── */}
+      <div className="cs-kpi-bar">
+        <div className="cs-kpi-card blue">
+          <div className="cs-kpi-label">Total clientes</div>
+          <div className="cs-kpi-value">{clientSummary.total}</div>
+          <div className="cs-kpi-sub">Registrados en el sistema</div>
+        </div>
+        <div className="cs-kpi-card green">
+          <div className="cs-kpi-label">Activos</div>
+          <div className="cs-kpi-value">{clientSummary.active}</div>
+          <div className="cs-kpi-sub">Compraron en los últimos 60 días</div>
+        </div>
+        <div className="cs-kpi-card orange">
+          <div className="cs-kpi-label">En riesgo</div>
+          <div className="cs-kpi-value">{clientSummary.risk}</div>
+          <div className="cs-kpi-sub">Sin compras hace +60 días</div>
+        </div>
+        <div className="cs-kpi-card red">
+          <div className="cs-kpi-label">Saldo pendiente total</div>
+          <div className="cs-kpi-value">{formatCurrency(clientSummary.withDebtAmount)}</div>
+          <div className="cs-kpi-sub">{clientSummary.withDebtClients} clientes con deuda</div>
+        </div>
+      </div>
+
+      {/* ── Toolbar ── */}
+      <div className="cs-toolbar">
+        <div className="cs-toolbar-left">
+          <div className="cs-search-box">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" stroke="currentColor" strokeWidth="1.6"/><path d="m13 13 3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+            <input
+              type="text"
+              value={clientSearch}
+              onChange={(e) => setClientSearch(e.target.value)}
+              placeholder="Buscar por nombre, CUIT o ciudad..."
+            />
+            {clientSearch && (
+              <button type="button" className="cs-search-clear" onClick={() => setClientSearch('')}>✕</button>
+            )}
+          </div>
+          <select
+            className="cs-select"
+            value={clientLevelFilter}
+            onChange={(e) => setClientLevelFilter(e.target.value)}
+          >
+            <option value="Todos">Todos los niveles</option>
+            {['Asociado','Plata','Oro','Platino'].map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+          <select
+            className="cs-select"
+            value={clientStatusFilter}
+            onChange={(e) => setClientStatusFilter(e.target.value)}
+          >
+            <option value="Todos">Todos los estados</option>
+            <option value="Activo">Activo</option>
+            <option value="Inactivo">Inactivo</option>
+            <option value="Bloqueado">Bloqueado</option>
+          </select>
+        </div>
+        <div className="cs-toolbar-right">
+          <button type="button" className="cs-btn secondary" onClick={handleExportClientsCsv}>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v10m0 0-3.5-3.5M10 13l3.5-3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/><path d="M4 15h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+            Exportar
+          </button>
+          <button type="button" className="cs-btn primary" onClick={() => setIsCreatingClient(true)}>
+            + Nuevo cliente
+          </button>
+        </div>
+      </div>
+
+      {/* ── Quick-filter tabs ── */}
+      <div className="cs-filter-tabs">
+        {QUICK_FILTERS.map(({ id, label, count }) => (
+          <button
+            key={id}
+            type="button"
+            className={`cs-filter-tab${clientQuickFilter === id ? ' active' : ''}${id === 'En riesgo' ? ' risk' : ''}${id === 'Bloqueados' ? ' blocked' : ''}`}
+            onClick={() => setClientQuickFilter(id)}
+          >
+            {label}
+            <span className="cs-filter-tab-count">{count}</span>
+          </button>
+        ))}
+
+        <div className="cs-sort-select-wrap">
+          <span>Ordenar</span>
+          <select
+            className="cs-select cs-sort-select"
+            value={`${clientSort.key}:${clientSort.direction}`}
+            onChange={(e) => handleClientSortSelect(e.target.value)}
+          >
+            <option value="lastPurchase:desc">Última compra</option>
+            <option value="businessName:asc">Nombre A→Z</option>
+            <option value="totalBilled:desc">Más facturado</option>
+            <option value="pendingBalance:desc">Mayor deuda</option>
+            <option value="status:asc">Estado</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ── Bulk action bar ── */}
+      {selectedIds.size > 0 && (
+        <div className="cs-bulk-bar">
+          <span className="cs-bulk-count">{selectedIds.size} seleccionados</span>
+          <select className="cs-select" value={bulkAction} onChange={(e) => setBulkAction(e.target.value)}>
+            <option value="">Acción masiva…</option>
+            <option value="activar">Activar todos</option>
+            <option value="bloquear">Bloquear todos</option>
+            <option value="exportar">Exportar selección</option>
+          </select>
+          <button type="button" className="cs-btn primary" onClick={handleBulkApply} disabled={!bulkAction}>
+            Aplicar
+          </button>
+          <button type="button" className="cs-btn secondary" onClick={() => setSelectedIds(new Set())}>
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {/* ── Table ── */}
+      <div className="cs-table-wrap">
+        <table className="cs-table">
+          <thead>
+            <tr>
+              <th className="cs-col-check">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === filteredClients.length && filteredClients.length > 0}
+                  onChange={toggleAll}
+                />
+              </th>
+              <th className="cs-col-client">
+                <button type="button" className="cs-th-btn" onClick={() => toggleClientSort('businessName')}>
+                  Cliente {sortIcon('businessName')}
+                </button>
+              </th>
+              <th className="cs-col-tier">
+                <button type="button" className="cs-th-btn" onClick={() => toggleClientSort('tier')}>
+                  Nivel {sortIcon('tier')}
+                </button>
+              </th>
+              <th className="cs-col-date">
+                <button type="button" className="cs-th-btn" onClick={() => toggleClientSort('lastPurchase')}>
+                  Última compra {sortIcon('lastPurchase')}
+                </button>
+              </th>
+              <th className="cs-col-money">
+                <button type="button" className="cs-th-btn" onClick={() => toggleClientSort('totalBilled')}>
+                  Facturado {sortIcon('totalBilled')}
+                </button>
+              </th>
+              <th className="cs-col-money">
+                <button type="button" className="cs-th-btn" onClick={() => toggleClientSort('pendingBalance')}>
+                  Deuda {sortIcon('pendingBalance')}
+                </button>
+              </th>
+              <th className="cs-col-status">
+                <button type="button" className="cs-th-btn" onClick={() => toggleClientSort('status')}>
+                  Estado {sortIcon('status')}
+                </button>
+              </th>
+              <th className="cs-col-actions">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredClients.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="cs-empty">
+                  <div>
+                    <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" style={{width:40,height:40,opacity:0.25,margin:'0 auto 8px'}}><circle cx="21" cy="21" r="13" stroke="currentColor" strokeWidth="3"/><path d="m30 30 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>
+                    <p>Sin clientes que coincidan con los filtros.</p>
+                  </div>
+                </td>
+              </tr>
+            ) : filteredClients.map((client) => {
+              const flags = getClientFlags(client)
+              const isAlert = flags.hasOverdueBalance
+              const statusMeta = STATUS_META[client.status] || STATUS_META.Inactivo
+              const initials = client.businessName.split(' ').map((p) => p[0]).join('').slice(0,2).toUpperCase()
+
+              return (
+                <tr
+                  key={client.id}
+                  className={`cs-row${isAlert ? ' alert' : ''}${selectedIds.has(client.id) ? ' selected' : ''}`}
+                >
+                  <td className="cs-col-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(client.id)}
+                      onChange={() => toggleSelect(client.id)}
+                    />
+                  </td>
+
+                  {/* Cliente */}
+                  <td className="cs-col-client">
+                    <div className="cs-client-cell">
+                      <div className={`cs-avatar${isAlert ? ' alert' : ''}`}>{initials}</div>
+                      <div className="cs-client-info">
+                        <button
+                          type="button"
+                          className="cs-client-name"
+                          onClick={() => setSelectedClientId(client.id)}
+                        >
+                          {client.businessName}
+                        </button>
+                        <span className="cs-client-sub">
+                          {client.category} · CUIT {client.taxId}
+                        </span>
+                        <div className="cs-flags">
+                          {flags.isInactiveLongTime && (
+                            <span className="cs-flag warning">+60 días sin compra</span>
+                          )}
+                          {flags.hasOverdueBalance && (
+                            <span className="cs-flag danger">Saldo pendiente</span>
+                          )}
+                          {flags.isCloseToNextTier && (
+                            <span className="cs-flag star">↑ Cerca de subir</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Nivel */}
+                  <td className="cs-col-tier">
+                    <span className={`cs-tier-badge tier-${(client.tier || 'asociado').toLowerCase()}`}>
+                      {client.tier || 'Asociado'}
+                    </span>
+                    <div className="cs-tier-pts">{getClientLifetimePoints(client).toLocaleString('es-AR')} pts</div>
+                  </td>
+
+                  {/* Última compra */}
+                  <td className="cs-col-date">
+                    {client.lastPurchase ? (
+                      <>
+                        <div className="cs-date-main">{formatDate(client.lastPurchase.createdAt)}</div>
+                        <div className="cs-date-rel">{getRelativeTimeLabel(client.lastPurchase.createdAt)}</div>
+                      </>
+                    ) : (
+                      <span className="cs-no-data">Sin registros</span>
+                    )}
+                  </td>
+
+                  {/* Facturado */}
+                  <td className="cs-col-money">
+                    <strong className="cs-money">{formatCurrency(client.totalBilled)}</strong>
+                  </td>
+
+                  {/* Deuda */}
+                  <td className="cs-col-money">
+                    {client.pendingBalance > 0 ? (
+                      <strong className="cs-money debt">{formatCurrency(client.pendingBalance)}</strong>
+                    ) : (
+                      <span className="cs-no-data">—</span>
+                    )}
+                  </td>
+
+                  {/* Estado */}
+                  <td className="cs-col-status">
+                    <button
+                      type="button"
+                      className={statusMeta.cls}
+                      title={`Cambiar estado (actualmente ${client.status})`}
+                      onClick={() => updateClientStatus(client.id, getNextClientStatus(client.status), session.name)}
+                    >
+                      {statusMeta.label}
+                    </button>
+                  </td>
+
+                  {/* Acciones */}
+                  <td className="cs-col-actions">
+                    <div className="cs-actions">
+                      <button
+                        type="button"
+                        className="cs-action-btn primary"
+                        onClick={() => setSelectedClientId(client.id)}
+                        title="Ver ficha del cliente"
+                      >
+                        Ver ficha
+                      </button>
+                      {client.pendingBalance > 0 && (
+                        <button
+                          type="button"
+                          className="cs-action-btn success"
+                          onClick={() => setPaymentClientId(client.id)}
+                          title="Registrar pago"
+                        >
+                          Reg. pago
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="cs-action-btn ghost"
+                        onClick={() => setAiClientId(client.id)}
+                        title="Consultar IA sobre este cliente"
+                      >
+                        IA
+                      </button>
+                      <button
+                        type="button"
+                        className="cs-action-btn ghost"
+                        onClick={() => setQuickNoteClientId(client.id)}
+                        title="Agregar nota rápida"
+                      >
+                        Nota
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Footer ── */}
+      <div className="cs-footer">
+        <span>
+          Mostrando {filteredClients.length} de {clientSummary.total} clientes
+          {clientSummary.risk > 0 && (
+            <span className="cs-footer-alert"> · {clientSummary.risk} en riesgo</span>
+          )}
+          {clientSummary.withDebtClients > 0 && (
+            <span className="cs-footer-debt"> · {clientSummary.withDebtClients} con deuda</span>
+          )}
+        </span>
+      </div>
+    </section>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function PedidosSection({
   ordersWithClient, filteredOrders,
   orderSearch, setOrderSearch,
@@ -6199,60 +6607,6 @@ export function AdminDashboard() {
                 </>
               ) : null}
 
-              {activeSection === 'clientes' ? (
-                <div className="admin-orders-filters admin-clients-toolbar admin-clients-topbar-actions">
-                  <label className="admin-search admin-search-wide">
-                    <input
-                      type="text"
-                      value={clientSearch}
-                      onChange={(event) => setClientSearch(event.target.value)}
-                      placeholder="Buscar por nombre, CUIT o ciudad..."
-                    />
-                  </label>
-
-                  <button
-                    type="button"
-                    className="admin-action-btn neutral"
-                    onClick={handleExportClientsCsv}
-                  >
-                    Exportar
-                  </button>
-
-                  <button
-                    type="button"
-                    className="admin-primary-btn"
-                    onClick={() => setIsCreatingClient(true)}
-                  >
-                    + Nuevo cliente
-                  </button>
-
-                  <label className="admin-status-filter">
-                    <select
-                      value={clientLevelFilter}
-                      onChange={(event) => setClientLevelFilter(event.target.value)}
-                    >
-                      <option value="Todos">Todos los niveles</option>
-                      {TIER_ORDER.map((tier) => (
-                        <option key={tier} value={tier}>
-                          {tier}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="admin-status-filter">
-                    <select
-                      value={clientStatusFilter}
-                      onChange={(event) => setClientStatusFilter(event.target.value)}
-                    >
-                      <option value="Todos">Todos los estados</option>
-                      <option value="Activo">Activo</option>
-                      <option value="Inactivo">Inactivo</option>
-                      <option value="Bloqueado">Bloqueado</option>
-                    </select>
-                  </label>
-                </div>
-              ) : null}
             </div>
           </header>
 
@@ -6410,220 +6764,28 @@ export function AdminDashboard() {
           ) : null}
 
           {activeSection === 'clientes' ? (
-            <section className="admin-section">
-              <div className="admin-clients-summary admin-clients-summary-main">
-                <div className="admin-clients-summary-item accent-blue">
-                  <span>Total clientes</span>
-                  <strong>{clientSummary.total}</strong>
-                  <small>Registrados en el sistema</small>
-                </div>
-                <div className="admin-clients-summary-item accent-green">
-                  <span>Activos</span>
-                  <strong>{clientSummary.active}</strong>
-                  <small>Compraron en los ultimos 60 dias</small>
-                </div>
-                <div className="admin-clients-summary-item accent-orange">
-                  <span>En riesgo</span>
-                  <strong>{clientSummary.risk}</strong>
-                  <small>Sin compras hace +60 dias</small>
-                </div>
-                <div className="admin-clients-summary-item accent-red">
-                  <span>Saldo pendiente</span>
-                  <strong>{formatCurrency(clientSummary.withDebtAmount)}</strong>
-                  <small>Clientes con deuda activa</small>
-                </div>
-              </div>
-
-              <div className="admin-clients-controls-row">
-                <div className="admin-client-quick-filters">
-                  {[
-                    ['Todos', clientSummary.total],
-                    ['Activos', clientSummary.active],
-                    ['En riesgo', clientSummary.risk],
-                    ['Inactivos', clientSummary.inactive],
-                    ['Con saldo pendiente', clientSummary.withDebtClients],
-                    ['Bloqueados', clientSummary.blocked],
-                  ].map(([filter, count]) => (
-                    <button
-                      key={filter}
-                      type="button"
-                      className={
-                        clientQuickFilter === filter
-                          ? filter === 'En riesgo'
-                            ? 'admin-client-filter-pill active risk'
-                            : 'admin-client-filter-pill active'
-                          : filter === 'En riesgo'
-                            ? 'admin-client-filter-pill risk'
-                            : 'admin-client-filter-pill'
-                      }
-                      onClick={() => setClientQuickFilter(filter)}
-                    >
-                      <span>{filter}</span>
-                      <strong>{count}</strong>
-                    </button>
-                  ))}
-                </div>
-
-                <label className="admin-clients-sort-select">
-                  <span>Ordenar por</span>
-                  <select
-                    value={`${clientSort.key}:${clientSort.direction}`}
-                    onChange={(event) => handleClientSortSelect(event.target.value)}
-                  >
-                    <option value="lastPurchase:desc">Ultima compra</option>
-                    <option value="businessName:asc">Nombre</option>
-                    <option value="tier:asc">Nivel</option>
-                    <option value="totalBilled:desc">Facturacion total</option>
-                    <option value="pendingBalance:desc">Saldo pendiente</option>
-                    <option value="status:asc">Estado</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="admin-card admin-card-table-scroll admin-clients-card">
-                <div className="admin-table">
-                  <div className="admin-table-row admin-table-head admin-client-crm-grid">
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('businessName')}>
-                      Cliente
-                    </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('tier')}>
-                      Nivel
-                    </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('lastPurchase')}>
-                      Ultima compra
-                    </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('totalBilled')}>
-                      Facturacion total
-                    </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('pendingBalance')}>
-                      Saldo pend.
-                    </button>
-                    <button type="button" className="admin-sort-btn" onClick={() => toggleClientSort('status')}>
-                      Estado
-                    </button>
-                    <span>Acciones</span>
-                  </div>
-
-                  {filteredClients.map((client) => (
-                    <div
-                      key={client.id}
-                      className={
-                        getClientFlags(client).hasOverdueBalance
-                          ? 'admin-table-row admin-client-crm-grid admin-client-row alert'
-                          : 'admin-table-row admin-client-crm-grid admin-client-row'
-                      }
-                    >
-                      <div className="admin-client-cell">
-                        <div className="admin-client-avatar">
-                          {client.businessName
-                            .split(' ')
-                            .map((part) => part[0])
-                            .join('')
-                            .slice(0, 2)
-                            .toUpperCase()}
-                        </div>
-                        <div className="admin-client-main">
-                          <strong>{client.businessName}</strong>
-                          <span>
-                            {client.category} · CUIT {client.taxId}
-                          </span>
-                          <div className="admin-client-flags-row">
-                            {getClientFlags(client).isInactiveLongTime ? (
-                              <span className="admin-client-flag warning" title="Sin compras en mas de 60 dias">
-                                Sin compras +60 dias
-                              </span>
-                            ) : null}
-                            {getClientFlags(client).hasOverdueBalance ? (
-                              <span className="admin-client-flag danger" title="Saldo pendiente">
-                                Saldo pendiente
-                              </span>
-                            ) : null}
-                            {getClientFlags(client).isCloseToNextTier ? (
-                              <span className="admin-client-flag star" title="Cerca de subir de nivel">
-                                Cerca de subir
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="admin-tier-summary">
-                        <TierBadge tier={client.tier} />
-                        <small>{getClientLifetimePoints(client).toLocaleString('es-AR')} pts</small>
-                      </div>
-                      <div className="admin-client-last-purchase">
-                        <strong>
-                          {client.lastPurchase ? formatDate(client.lastPurchase.createdAt) : 'Sin compras'}
-                        </strong>
-                        <small>
-                          {client.lastPurchase ? getRelativeTimeLabel(client.lastPurchase.createdAt) : 'Sin registros'}
-                        </small>
-                      </div>
-                      <strong>{formatCurrency(client.totalBilled)}</strong>
-                      <span>{formatCurrency(client.pendingBalance)}</span>
-                      <button
-                        type="button"
-                        className={
-                          client.status === 'Bloqueado'
-                            ? 'admin-status-badge admin-status-toggle cancelado'
-                            : client.status === 'Inactivo'
-                              ? 'admin-status-badge admin-status-toggle pendiente'
-                              : 'admin-status-badge admin-status-toggle aprobado'
-                        }
-                        title={`Cambiar a ${getNextClientStatus(client.status)}`}
-                        onClick={() =>
-                          updateClientStatus(
-                            client.id,
-                            getNextClientStatus(client.status),
-                            session.name,
-                          )
-                        }
-                      >
-                        {client.status}
-                      </button>
-                      <div className="admin-order-actions admin-client-actions">
-                        <button
-                          type="button"
-                          className="admin-table-link admin-client-action-view"
-                          onClick={() => setSelectedClientId(client.id)}
-                        >
-                          Ver ficha
-                        </button>
-                        <button
-                          type="button"
-                          className="admin-action-btn neutral admin-client-action-ai"
-                          onClick={() => setAiClientId(client.id)}
-                        >
-                          IA
-                        </button>
-                        {client.pendingBalance > 0 ? (
-                          <button
-                            type="button"
-                            className="admin-action-btn approve admin-client-action-payment"
-                            onClick={() => setPaymentClientId(client.id)}
-                          >
-                            Reg. pago
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="admin-action-btn neutral admin-client-action-note"
-                          onClick={() => setQuickNoteClientId(client.id)}
-                        >
-                          Nota
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="admin-clients-footer">
-                  <span>
-                    {filteredClients.length} clientes
-                    {clientSummary.risk > 0 ? ` · ${clientSummary.risk} alerta activa` : ''}
-                  </span>
-                </div>
-              </div>
-            </section>
+            <ClientesSection
+              clientsWithTier={clientsWithTier}
+              filteredClients={filteredClients}
+              clientSummary={clientSummary}
+              clientSearch={clientSearch} setClientSearch={setClientSearch}
+              clientLevelFilter={clientLevelFilter} setClientLevelFilter={setClientLevelFilter}
+              clientStatusFilter={clientStatusFilter} setClientStatusFilter={setClientStatusFilter}
+              clientQuickFilter={clientQuickFilter} setClientQuickFilter={setClientQuickFilter}
+              clientSort={clientSort}
+              toggleClientSort={toggleClientSort}
+              handleClientSortSelect={handleClientSortSelect}
+              updateClientStatus={updateClientStatus}
+              setSelectedClientId={setSelectedClientId}
+              setEditingClientId={setEditingClientId}
+              setIsCreatingClient={setIsCreatingClient}
+              setPaymentClientId={setPaymentClientId}
+              setQuickNoteClientId={setQuickNoteClientId}
+              setAiClientId={setAiClientId}
+              handleExportClientsCsv={handleExportClientsCsv}
+              deleteClient={deleteClient}
+              session={session}
+            />
           ) : null}
 
           {activeSection === 'chats' ? (
