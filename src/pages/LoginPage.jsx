@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { BRAND } from '../lib/brandConfig'
 
@@ -9,7 +9,7 @@ const quickAccessUsers = BRAND.demo.enabled
   : null
 
 export function LoginPage() {
-  const { session, login, register, isAuthenticated, isRefreshing } = useAuth()
+  const { session, login, register, isAuthenticated, isRefreshing, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [formData, setFormData] = useState({
@@ -31,8 +31,11 @@ export function LoginPage() {
     password: '',
   })
 
-  if (isAuthenticated) {
-    return <Navigate to={session.role === 'admin' ? '/admin' : '/cliente'} replace />
+  // No more auto-redirect: the user explicitly continues if there's a valid session
+  const continueToPanel = () => {
+    if (session?.role) {
+      navigate(session.role === 'admin' ? '/admin' : '/cliente', { replace: true })
+    }
   }
 
   const handleChange = (event) => {
@@ -122,7 +125,38 @@ export function LoginPage() {
 
         <div className="login-card">
           <div className="card-glow" aria-hidden="true"></div>
-          <h2>Inicia sesion</h2>
+
+          {isAuthenticated && session?.role ? (
+            <div className="login-resume-banner">
+              <div>
+                <p className="login-resume-eyebrow">Sesión activa</p>
+                <p className="login-resume-name">
+                  {session.name || session.email}
+                  <span className="login-resume-role">
+                    {session.role === 'admin' ? 'Administrador' : 'Cliente'}
+                  </span>
+                </p>
+              </div>
+              <div className="login-resume-actions">
+                <button
+                  type="button"
+                  className="pill-button"
+                  onClick={() => logout()}
+                >
+                  Cerrar sesión
+                </button>
+                <button
+                  type="button"
+                  className="primary-button login-resume-cta"
+                  onClick={continueToPanel}
+                >
+                  Continuar al panel →
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <h2>Iniciá sesión</h2>
 
           <form className="login-form" onSubmit={handleSubmit}>
             <label className="field">

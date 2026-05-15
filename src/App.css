@@ -7998,3 +7998,72 @@ button.admin-pill:hover { filter: brightness(0.96); }
   background: #1A1FBE !important;
   border-color: #1A1FBE !important;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   NEXOFT · Login — active session resume banner
+   ════════════════════════════════════════════════════════════════════════ */
+.login-resume-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.4rem;
+  background: linear-gradient(135deg, #1A1FBE, #0E12A0);
+  border-radius: 0.5rem;
+  color: #ffffff;
+}
+.login-resume-eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.65);
+}
+.login-resume-name {
+  margin: 0.2rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.login-resume-role {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: #FFD100;
+  color: #0C0D1A;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.login-resume-actions {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+.login-resume-banner .pill-button {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.78rem;
+  padding: 0.45rem 0.85rem;
+}
+.login-resume-banner .pill-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.login-resume-cta {
+  margin-top: 0 !important;
+  padding: 0.5rem 0.95rem !important;
+  font-size: 0.82rem !important;
+  background: #FFD100 !important;
+  color: #0C0D1A !important;
+  box-shadow: 0 4px 14px rgba(255, 209, 0, 0.25) !important;
+}
+.login-resume-cta:hover {
+  background: #FFE57A !important;
+}

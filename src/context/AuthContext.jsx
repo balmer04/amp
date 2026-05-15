@@ -197,7 +197,12 @@ export function AuthProvider({ children }) {
       return
     }
 
-    refreshSession()
+    // Validate token in background. If it fails (network/backend issue),
+    // we silently keep the local session so the UI doesn't blank out.
+    // ProtectedRoute will redirect to /login if isAuthenticated becomes false.
+    refreshSession().catch(() => {
+      // noop — refreshSession already handles errors internally
+    })
   }, [])
 
   const logout = () => {
