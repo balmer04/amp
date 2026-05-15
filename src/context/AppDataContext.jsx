@@ -919,6 +919,16 @@ export function AppDataProvider({ children }) {
         ? current.products
         : applyOrderInventory(current.products, order, 'discount')
 
+      // Al aprobar, se genera la deuda en cuenta corriente del cliente
+      const nextClients = current.clients.map((client) =>
+        client.id === order.clientId
+          ? {
+              ...client,
+              pendingBalance: (Number(client.pendingBalance) || 0) + (Number(order.total) || 0),
+            }
+          : client,
+      )
+
       return {
         ...current,
         orders: current.orders.map((entry) =>
@@ -933,6 +943,7 @@ export function AppDataProvider({ children }) {
             : entry,
         ),
         products: nextProducts,
+        clients: nextClients,
         auditLog: appendAuditEntry(current.auditLog, actorName, 'aprobó el pedido', order.id),
       }
     })
@@ -1010,31 +1021,33 @@ export function AppDataProvider({ children }) {
       const lifetimePointsToRemove = order.lifetimePointsGranted
         ? calculatePointsFromTotal(order.total)
         : 0
-      const nextClients = order.lifetimePointsGranted
-        ? applyCustomerStatusUpdate(
-            current.clients.map((client) =>
-              client.id === order.clientId
-                ? {
-                    ...client,
-                    lifetime_points: Math.max(
-                      Number(client.lifetime_points ?? client.points ?? 0) - lifetimePointsToRemove,
-                      0,
-                    ),
-                    available_points: Math.max(
-                      Number(client.available_points ?? client.points ?? 0) - lifetimePointsToRemove,
-                      0,
-                    ),
-                    points: Math.max(
-                      Number(client.lifetime_points ?? client.points ?? 0) - lifetimePointsToRemove,
-                      0,
-                    ),
-                  }
-                : client,
+      // Si el pedido estaba aprobado, revertimos la deuda en cuenta corriente
+      const wasApproved = ['Aprobado', 'Preparando', 'Despachado'].includes(order.status)
+      const nextClients = applyCustomerStatusUpdate(
+        current.clients.map((client) => {
+          if (client.id !== order.clientId) return client
+          return {
+            ...client,
+            pendingBalance: wasApproved
+              ? Math.max((Number(client.pendingBalance) || 0) - (Number(order.total) || 0), 0)
+              : client.pendingBalance,
+            lifetime_points: Math.max(
+              Number(client.lifetime_points ?? client.points ?? 0) - lifetimePointsToRemove,
+              0,
             ),
-            order.clientId,
-            current.settings.tierThresholds,
-          )
-        : current.clients
+            available_points: Math.max(
+              Number(client.available_points ?? client.points ?? 0) - lifetimePointsToRemove,
+              0,
+            ),
+            points: Math.max(
+              Number(client.lifetime_points ?? client.points ?? 0) - lifetimePointsToRemove,
+              0,
+            ),
+          }
+        }),
+        order.clientId,
+        current.settings.tierThresholds,
+      )
 
       return {
         ...current,
@@ -1105,12 +1118,12 @@ export function AppDataProvider({ children }) {
       const total =
         calculateOrderTotal(items, current.products, client.tier, current.settings) +
         (Number(shippingCost) || 0)
-      const shouldAutoApprove =
-        !current.settings?.operational?.manualOrderApproval && paymentMethod !== 'transfer'
+      // Los pedidos del cliente siempre quedan Pendiente — el admin los aprueba.
+      // Evitamos auto-aprobar localmente para no entrar en conflicto con la DB.
       const nextOrder = {
         id: orderId,
         clientId,
-        status: shouldAutoApprove ? 'Aprobado' : 'Pendiente',
+        status: 'Pendiente',
         total,
         items,
         createdAt: new Date().toISOString(),
@@ -1121,7 +1134,7 @@ export function AppDataProvider({ children }) {
         taxId,
         notes,
         adminNotes: '',
-        stockDiscounted: shouldAutoApprove,
+        stockDiscounted: false,
         pointsGranted: false,
         lifetimePointsGranted: false,
         history: [
@@ -1131,24 +1144,11 @@ export function AppDataProvider({ children }) {
             actor: client.businessName,
             createdAt: new Date().toISOString(),
           },
-          ...(shouldAutoApprove
-            ? [
-                {
-                  id: `ORD-${Date.now()}-approved`,
-                  action: 'Aprobado',
-                  actor: 'Sistema',
-                  createdAt: new Date().toISOString(),
-                },
-              ]
-            : []),
         ],
       }
 
       return {
         ...current,
-        products: shouldAutoApprove
-          ? applyOrderInventory(current.products, nextOrder, 'discount')
-          : current.products,
         orders: [nextOrder, ...current.orders],
         clients: current.clients.map((entry) =>
           entry.id === clientId

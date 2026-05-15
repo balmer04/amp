@@ -3111,7 +3111,7 @@ export function ClientDashboard() {
 
     setOrderItems([])
     setProductQuantities({})
-    handleTabChange('cuenta')
+    handleTabChange('historial')
   }
 
   const handleOpenAccountEdit = () => {
