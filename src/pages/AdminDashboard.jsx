@@ -1627,12 +1627,19 @@ function ClientFormModal({
   onClose,
   onSave,
 }) {
+  const { session } = useAuth()
+  const isNew = !initialValues?.id
   const [formValues, setFormValues] = useState(initialValues)
+  const [password, setPassword] = useState('')
   const [errors, setErrors] = useState({})
+  const [isSaving, setIsSaving] = useState(false)
+  const [apiError, setApiError] = useState('')
 
   useEffect(() => {
     setFormValues(initialValues)
     setErrors({})
+    setApiError('')
+    setPassword('')
   }, [initialValues])
 
   if (!initialValues || !formValues) {
@@ -1643,21 +1650,53 @@ function ClientFormModal({
     setFormValues((current) => ({ ...current, [key]: value }))
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const nextErrors = validateClientForm(formValues)
-    setErrors(nextErrors)
-
-    if (Object.keys(nextErrors).length > 0) {
-      return
+    if (isNew && password.length < 6) {
+      nextErrors.password = 'La contraseña debe tener al menos 6 caracteres.'
     }
+    setErrors(nextErrors)
+    setApiError('')
 
-    onSave({
+    if (Object.keys(nextErrors).length > 0) return
+
+    const payload = {
       ...formValues,
       points: Number(formValues.points) || 0,
       creditLimit: Number(formValues.creditLimit) || 0,
       pendingBalance: Number(formValues.pendingBalance) || 0,
       specialDiscount: Number(formValues.specialDiscount) || 0,
-    })
+    }
+
+    // Alta nueva: crear cuenta de acceso + agregar al estado
+    if (isNew) {
+      setIsSaving(true)
+      try {
+        const res = await fetch('/api/admin/clients', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.token}`,
+          },
+          body: JSON.stringify({ ...payload, password }),
+        })
+        const result = await res.json()
+        if (!result.ok) {
+          setApiError(result.message || 'No se pudo crear el cliente.')
+          return
+        }
+        // El servidor ya sincronizó en app_state — solo actualizamos local
+        onSave({ ...payload, id: result.userId })
+      } catch {
+        setApiError('Error de conexion con el servidor.')
+      } finally {
+        setIsSaving(false)
+      }
+      return
+    }
+
+    // Edicion: sin llamada extra al servidor (updateState lo persiste)
+    onSave(payload)
   }
 
   return (
@@ -1671,8 +1710,13 @@ function ClientFormModal({
       >
         <div className="admin-modal-header">
           <div>
-            <span className="admin-card-eyebrow">Formulario</span>
-            <h3>{formValues.id ? 'Editar cliente' : 'Alta de cliente'}</h3>
+            <span className="admin-card-eyebrow">{isNew ? 'Alta de cliente' : 'Editar cliente'}</span>
+            <h3>{isNew ? 'Nueva cuenta de cliente' : formValues.businessName || 'Editar cliente'}</h3>
+            {isNew ? (
+              <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--color-text-secondary, #666)' }}>
+                Se creará un acceso al portal con el email y contraseña que indiques.
+              </p>
+            ) : null}
           </div>
           <button type="button" className="admin-modal-close" onClick={onClose}>
             Cancelar
@@ -1718,6 +1762,19 @@ function ClientFormModal({
             />
             {errors.email ? <small>{errors.email}</small> : null}
           </label>
+
+          {isNew ? (
+            <label className="admin-form-field">
+              <span>Contraseña de acceso</span>
+              <input
+                type="password"
+                value={password}
+                placeholder="Mínimo 6 caracteres"
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              {errors.password ? <small>{errors.password}</small> : null}
+            </label>
+          ) : null}
 
           <label className="admin-form-field">
             <span>Telefono principal</span>
@@ -1858,12 +1915,18 @@ function ClientFormModal({
           </label>
         </div>
 
+        {apiError ? (
+          <p style={{ color: 'var(--color-danger, #c0392b)', margin: '0 0 12px', fontSize: '0.875rem', padding: '0 4px' }}>
+            {apiError}
+          </p>
+        ) : null}
+
         <div className="admin-modal-footer">
-          <button type="button" className="admin-action-btn neutral" onClick={onClose}>
+          <button type="button" className="admin-action-btn neutral" onClick={onClose} disabled={isSaving}>
             Cancelar
           </button>
-          <button type="button" className="admin-primary-btn" onClick={handleSubmit}>
-            Guardar
+          <button type="button" className="admin-primary-btn" onClick={handleSubmit} disabled={isSaving}>
+            {isSaving ? 'Creando cuenta…' : isNew ? 'Crear cliente' : 'Guardar cambios'}
           </button>
         </div>
       </div>

@@ -493,6 +493,114 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// ── Admin: alta de cliente con cuenta de acceso ───────────────────────────────
+app.post('/api/admin/clients', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const {
+      email,
+      password,
+      businessName,
+      name,
+      phone,
+      altPhone,
+      taxId,
+      address,
+      city,
+      province,
+      preferredBranch,
+      category,
+      status,
+      creditLimit,
+      specialDiscount,
+      pendingBalance,
+      note,
+    } = req.body ?? {};
+
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const safePassword = String(password ?? '').trim();
+    const safeName = String(name ?? businessName ?? '').trim();
+    const safeBusinessName = String(businessName ?? safeName).trim();
+
+    if (!normalizedEmail || !safeBusinessName) {
+      return res.status(400).json({ ok: false, message: 'Email y razon social son obligatorios.' });
+    }
+
+    if (!safePassword || safePassword.length < 6) {
+      return res.status(400).json({ ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' });
+    }
+
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ ok: false, message: 'Ya existe una cuenta con ese email.' });
+    }
+
+    const passwordHash = bcrypt.hashSync(safePassword, 10);
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, password, role, name, is_active, created_at, updated_at)
+       VALUES ($1, $2, 'client', $3, TRUE, NOW(), NOW())
+       RETURNING *`,
+      [normalizedEmail, passwordHash, safeName || safeBusinessName],
+    );
+    const user = rows[0];
+
+    const profilePayload = {
+      business_name: safeBusinessName,
+      phone: String(phone ?? '').trim(),
+      alt_phone: String(altPhone ?? '').trim(),
+      tax_id: String(taxId ?? '').trim(),
+      address: String(address ?? '').trim(),
+      city: String(city ?? '').trim(),
+      province: String(province ?? '').trim(),
+      preferred_branch: String(preferredBranch ?? '').trim(),
+    };
+    await ensureUserProfile(user.id, profilePayload);
+
+    // Sync full client record into app_state (with admin-set fields)
+    const currentState = await getAppStateRecord();
+    if (currentState && Array.isArray(currentState.clients)) {
+      const alreadyInState = currentState.clients.some(
+        (c) => c.id === user.id || c.email === normalizedEmail,
+      );
+      if (!alreadyInState) {
+        const nextClient = {
+          id: user.id,
+          name: safeName || safeBusinessName,
+          businessName: safeBusinessName,
+          email: normalizedEmail,
+          phone: profilePayload.phone,
+          altPhone: profilePayload.alt_phone,
+          taxId: profilePayload.tax_id,
+          address: profilePayload.address,
+          city: profilePayload.city,
+          province: profilePayload.province,
+          preferredBranch: profilePayload.preferred_branch,
+          category: String(category ?? 'Ferreteria'),
+          status: String(status ?? 'Activo'),
+          note: String(note ?? ''),
+          pendingBalance: Number(pendingBalance) || 0,
+          creditLimit: Number(creditLimit) || 0,
+          specialDiscount: Number(specialDiscount) || 0,
+          paymentHistory: [],
+          activityLog: [],
+          orderHistory: [],
+          points: 0,
+          lifetime_points: 0,
+          available_points: 0,
+          createdAt: new Date().toISOString(),
+        };
+        currentState.clients = [nextClient, ...currentState.clients];
+        await saveAppStateRecord(currentState);
+      }
+    }
+
+    return res.status(201).json({ ok: true, userId: user.id, email: normalizedEmail });
+  } catch (error) {
+    console.error('Admin create client error:', error);
+    return res.status(500).json({ ok: false, message: 'Error interno al crear el cliente.' });
+  }
+});
+
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     await initDB();
