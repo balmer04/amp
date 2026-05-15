@@ -2288,89 +2288,63 @@ function StockAdjustModal({ product, onClose, onAdjust }) {
   const isLow = stockDisponible < stockMinimo
 
   return (
-    <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="admin-modal-card"
-        style={{ maxWidth: '480px' }}
-        role="dialog"
-        aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="admin-modal-header">
+    <div className="px-modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="px-modal" style={{ maxWidth: 480 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="px-modal-head">
           <div>
-            <span className="admin-card-eyebrow">Control de stock</span>
-            <h3>{product.name}</h3>
-            <p className="admin-modal-copy">SKU: {product.sku}</p>
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1A1FBE', marginBottom: 2 }}>Control de stock</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>{product.name}</div>
+            <div style={{ fontSize: '0.78rem', color: '#64748b' }}>SKU: {product.sku}</div>
           </div>
-          <button type="button" className="admin-modal-close" onClick={onClose}>Cerrar</button>
+          <button type="button" className="px-btn px-btn-sm secondary" onClick={onClose}>Cerrar</button>
         </div>
+        <div className="px-modal-body">
+          {/* Mini KPI row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', marginBottom: '1rem' }}>
+            {[
+              { label: 'Actual', value: product.currentStock ?? 0 },
+              { label: 'Reservado', value: stockReservado },
+              { label: 'Disponible', value: stockDisponible, color: isLow ? '#dc2626' : '#16a34a' },
+              { label: 'Mínimo', value: stockMinimo },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ border: '1px solid #e2e8f0', padding: '0.6rem 0.75rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{label}</div>
+                <div style={{ fontWeight: 700, fontSize: '1.1rem', color: color || '#0f172a' }}>{value}</div>
+              </div>
+            ))}
+          </div>
 
-        <div className="admin-client-profile-summary" style={{ marginBottom: '1rem' }}>
-          <div className="admin-client-profile-pill">
-            <span>Stock actual</span>
-            <strong>{product.currentStock ?? 0}</strong>
-          </div>
-          <div className="admin-client-profile-pill">
-            <span>Reservado</span>
-            <strong>{stockReservado}</strong>
-          </div>
-          <div className="admin-client-profile-pill">
-            <span>Disponible</span>
-            <strong style={{ color: isLow ? '#e53e3e' : undefined }}>{stockDisponible}</strong>
-          </div>
-          <div className="admin-client-profile-pill">
-            <span>Mínimo</span>
-            <strong>{stockMinimo}</strong>
-          </div>
-        </div>
+          {isLow && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 0.75rem', background: '#fef3c7', border: '1px solid #fbbf24', fontSize: '0.83rem', fontWeight: 600, color: '#92400e', marginBottom: '1rem' }}>
+              <span>⚠️</span> Stock disponible por debajo del mínimo configurado
+            </div>
+          )}
 
-        {isLow ? (
-          <div className="admin-alert-row rich warning" style={{ marginBottom: '1rem' }}>
-            <span className="admin-alert-icon">⚠️</span>
-            <strong>Stock disponible por debajo del mínimo configurado</strong>
-          </div>
-        ) : null}
-
-        <section className="admin-modal-section">
-          <h4>Registrar movimiento</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <label className="admin-form-field">
+            <label className="px-field">
               <span>Tipo de movimiento</span>
-              <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <select className="px-select" value={tipo} onChange={(e) => setTipo(e.target.value)}>
                 <option value="ingreso">Ingreso de mercadería</option>
                 <option value="egreso">Egreso / Ajuste negativo</option>
                 <option value="ajuste">Ajuste de inventario</option>
               </select>
             </label>
-            <label className="admin-form-field">
+            <label className="px-field">
               <span>Cantidad</span>
-              <input
-                type="number"
-                min="1"
-                value={cantidad}
-                onChange={(e) => setCantidad(e.target.value)}
-                placeholder="Ej: 50"
-              />
+              <input className="px-input" type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} placeholder="Ej: 50" />
             </label>
-            <label className="admin-form-field">
+            <label className="px-field">
               <span>Motivo (opcional)</span>
-              <input
-                type="text"
-                value={motivo}
-                onChange={(e) => setMotivo(e.target.value)}
-                placeholder="Ej: Compra a proveedor, ajuste de inventario..."
-              />
+              <input className="px-input" type="text" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej: Compra a proveedor, ajuste de inventario..." />
             </label>
-            <button
-              type="button"
-              className="admin-primary-btn"
-              onClick={handleSubmit}
-              disabled={saving || !cantidad || parseInt(cantidad, 10) <= 0}
-            >
-              {saving ? 'Guardando...' : 'Confirmar movimiento'}
-            </button>
           </div>
-        </section>
+        </div>
+        <div className="px-modal-foot">
+          <button type="button" className="px-btn secondary" onClick={onClose}>Cancelar</button>
+          <button type="button" className="px-btn primary" onClick={handleSubmit} disabled={saving || !cantidad || parseInt(cantidad, 10) <= 0}>
+            {saving ? 'Guardando...' : 'Confirmar movimiento'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -3684,56 +3658,56 @@ function ProductFormModal({ title, initial, onSave, onClose }) {
   }
 
   return (
-    <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
-      <div className="admin-modal-card" role="dialog" aria-modal="true" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
-        <div className="admin-modal-header">
+    <div className="px-modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="px-modal" role="dialog" aria-modal="true" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
+        <div className="px-modal-head">
           <div>
-            <span className="admin-card-eyebrow">Catálogo</span>
-            <h3>{title}</h3>
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1A1FBE', marginBottom: 2 }}>Catálogo</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>{title}</div>
           </div>
-          <button type="button" className="admin-modal-close" onClick={onClose}>Cerrar</button>
+          <button type="button" className="px-btn px-btn-sm secondary" onClick={onClose}>Cerrar</button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div className="admin-modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem' }}>
-            <label className="admin-field-label" style={{ gridColumn: '1 / -1' }}>
-              Nombre del producto *
-              <input className="admin-input" value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Ej: Lavandina Concentrada 5L" />
+          <div className="px-modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            <label className="px-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Nombre del producto *</span>
+              <input className="px-input" value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Ej: Lavandina Concentrada 5L" />
             </label>
-            <label className="admin-field-label">
-              SKU *
-              <input className="admin-input" value={form.sku} onChange={(e) => setForm(p => ({ ...p, sku: e.target.value.toUpperCase() }))} placeholder="Ej: LMP-LAV-5L" />
+            <label className="px-field">
+              <span>SKU *</span>
+              <input className="px-input" value={form.sku} onChange={(e) => setForm(p => ({ ...p, sku: e.target.value.toUpperCase() }))} placeholder="Ej: LMP-LAV-5L" />
             </label>
-            <label className="admin-field-label">
-              Categoría
-              <select className="admin-input" value={form.category} onChange={(e) => setForm(p => ({ ...p, category: e.target.value }))}>
+            <label className="px-field">
+              <span>Categoría</span>
+              <select className="px-select" value={form.category} onChange={(e) => setForm(p => ({ ...p, category: e.target.value }))}>
                 {PRODUCT_CATEGORIES_ALL.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
-            <label className="admin-field-label">
-              Precio ($)
-              <input type="number" min="0" step="0.01" className="admin-input" value={form.price} onChange={(e) => setForm(p => ({ ...p, price: e.target.value }))} placeholder="0.00" />
+            <label className="px-field">
+              <span>Precio ($)</span>
+              <input type="number" min="0" step="0.01" className="px-input" value={form.price} onChange={(e) => setForm(p => ({ ...p, price: e.target.value }))} placeholder="0.00" />
             </label>
-            <label className="admin-field-label">
-              Marca
-              <input className="admin-input" value={form.brand} onChange={(e) => setForm(p => ({ ...p, brand: e.target.value }))} placeholder="Ej: Procenex" />
+            <label className="px-field">
+              <span>Marca</span>
+              <input className="px-input" value={form.brand} onChange={(e) => setForm(p => ({ ...p, brand: e.target.value }))} placeholder="Ej: Procenex" />
             </label>
-            <label className="admin-field-label">
-              Stock inicial
-              <input type="number" min="0" className="admin-input" value={form.currentStock} onChange={(e) => setForm(p => ({ ...p, currentStock: e.target.value }))} placeholder="0" />
+            <label className="px-field">
+              <span>Stock inicial</span>
+              <input type="number" min="0" className="px-input" value={form.currentStock} onChange={(e) => setForm(p => ({ ...p, currentStock: e.target.value }))} placeholder="0" />
             </label>
-            <label className="admin-field-label">
-              Stock mínimo
-              <input type="number" min="0" className="admin-input" value={form.stockMinimo} onChange={(e) => setForm(p => ({ ...p, stockMinimo: e.target.value }))} placeholder="5" />
+            <label className="px-field">
+              <span>Stock mínimo</span>
+              <input type="number" min="0" className="px-input" value={form.stockMinimo} onChange={(e) => setForm(p => ({ ...p, stockMinimo: e.target.value }))} placeholder="5" />
             </label>
-            <label className="admin-field-label" style={{ gridColumn: '1 / -1' }}>
-              Descripción / Detalle
-              <input className="admin-input" value={form.detail} onChange={(e) => setForm(p => ({ ...p, detail: e.target.value }))} placeholder="Unidad de medida, presentación, etc." />
+            <label className="px-field" style={{ gridColumn: '1 / -1' }}>
+              <span>Descripción / Detalle</span>
+              <input className="px-input" value={form.detail} onChange={(e) => setForm(p => ({ ...p, detail: e.target.value }))} placeholder="Unidad de medida, presentación, etc." />
             </label>
-            {error && <p style={{ color: '#e53e3e', fontSize: '0.85rem', gridColumn: '1 / -1' }}>{error}</p>}
+            {error && <p style={{ color: '#dc2626', fontSize: '0.83rem', gridColumn: '1 / -1', margin: 0 }}>{error}</p>}
           </div>
-          <div className="admin-modal-footer">
-            <button type="button" className="admin-action-btn neutral" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="admin-primary-btn">Guardar</button>
+          <div className="px-modal-foot">
+            <button type="button" className="px-btn secondary" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="px-btn primary">Guardar producto</button>
           </div>
         </form>
       </div>
@@ -3870,147 +3844,207 @@ function StockSection({
   }
 
   return (
-    <section className="admin-section">
-      {/* KPIs */}
-      <div className="admin-metrics-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <MetricCard title="Total productos" value={String(kpis.total)} detail="en catálogo" tone="slate" />
-        <MetricCard title="Stock bajo" value={String(kpis.low)} detail="debajo del mínimo" tone={kpis.low > 0 ? 'navy' : 'slate'} />
-        <MetricCard title="Críticos" value={String(kpis.critical)} detail="menos de 50% del mínimo" tone={kpis.critical > 0 ? 'red' : 'slate'} />
-        <MetricCard title="Valor en stock" value={formatCurrency(kpis.value)} detail="precio × unidades" tone="slate" />
+    <section className="px-section">
+      {/* ── KPI bar ── */}
+      <div className="px-kpi-bar">
+        <div className="px-kpi tone-slate">
+          <span className="px-kpi-label">Total productos</span>
+          <span className="px-kpi-value">{kpis.total}</span>
+          <span className="px-kpi-sub">en catálogo</span>
+        </div>
+        <div className={`px-kpi ${kpis.low > 0 ? 'tone-amber' : 'tone-slate'}`}>
+          <span className="px-kpi-label">Stock bajo</span>
+          <span className="px-kpi-value">{kpis.low}</span>
+          <span className="px-kpi-sub">debajo del mínimo</span>
+        </div>
+        <div className={`px-kpi ${kpis.critical > 0 ? 'tone-red' : 'tone-slate'}`}>
+          <span className="px-kpi-label">Críticos</span>
+          <span className="px-kpi-value">{kpis.critical}</span>
+          <span className="px-kpi-sub">menos de 50% del mínimo</span>
+        </div>
+        <div className="px-kpi tone-blue">
+          <span className="px-kpi-label">Valor en stock</span>
+          <span className="px-kpi-value px-money">{formatCurrency(kpis.value)}</span>
+          <span className="px-kpi-sub">precio × unidades</span>
+        </div>
       </div>
 
-      <div className="admin-card admin-stock-card">
-        {/* Toolbar */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '1rem', alignItems: 'center' }}>
-          <label className="admin-search" style={{ flex: '1 1 220px' }}>
+      {/* ── Alert banner ── */}
+      {kpis.critical > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.65rem 1rem', background: '#fef3c7', border: '1px solid #fbbf24', fontSize: '0.83rem', fontWeight: 600, color: '#92400e', marginBottom: '0.75rem' }}>
+          <span>⚠️</span>
+          <span>{kpis.critical} producto(s) en nivel crítico · {kpis.low - kpis.critical} más con stock bajo</span>
+        </div>
+      )}
+
+      <div className="px-card">
+        {/* ── Toolbar ── */}
+        <div className="px-toolbar">
+          <label className="px-search" style={{ flex: '1 1 220px' }}>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="m13 13 3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
             <input
               type="text"
               value={stockSearch}
               onChange={(e) => { setStockSearch(e.target.value); setStockPage(1) }}
-              placeholder="Buscar por producto, SKU o marca..."
+              placeholder="Buscar por producto, SKU o marca…"
             />
           </label>
-          <select className="admin-select" value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setStockPage(1) }}>
+          <select className="px-select" value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setStockPage(1) }}>
             <option value="todos">Todas las categorías</option>
             {PRODUCT_CATEGORIES_ALL.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          <select className="admin-select" value={stockOnlyAlerts ? 'alertas' : 'todos'} onChange={(e) => { setStockOnlyAlerts(e.target.value === 'alertas'); setStockPage(1) }}>
+          <select className="px-select" value={stockOnlyAlerts ? 'alertas' : 'todos'} onChange={(e) => { setStockOnlyAlerts(e.target.value === 'alertas'); setStockPage(1) }}>
             <option value="todos">Todos los estados</option>
             <option value="alertas">Solo alertas</option>
           </select>
-          <select className="admin-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <select className="px-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
             <option value="name">Ordenar: Nombre</option>
             <option value="stock">Ordenar: Stock ↑</option>
             <option value="status">Ordenar: Estado</option>
             <option value="price">Ordenar: Precio</option>
           </select>
-          <button type="button" className="admin-primary-btn" onClick={() => setShowNewForm(true)}>+ Nuevo producto</button>
-          <button type="button" className="admin-action-btn neutral" onClick={() => setIsProductImportOpen(true)}>Importar</button>
+          <button type="button" className="px-btn primary" onClick={() => setShowNewForm(true)}>
+            + Nuevo producto
+          </button>
+          <button type="button" className="px-btn secondary" onClick={() => setIsProductImportOpen(true)}>
+            Importar
+          </button>
         </div>
 
-        {/* Bulk action bar */}
+        {/* ── Bulk action bar ── */}
         {selected.size > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.6rem 0.75rem', background: '#eff6ff', borderRadius: '8px', marginBottom: '0.75rem', border: '1px solid #bfdbfe' }}>
-            <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{selected.size} producto(s) seleccionado(s)</span>
-            <button type="button" className="admin-action-btn danger" onClick={handleBulkDelete} disabled={bulkDeleting}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.6rem 0.75rem', background: '#e8eaff', border: '1px solid #c7d2fe', marginBottom: '0.75rem' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.85rem', color: '#1A1FBE', flex: 1 }}>
+              {selected.size} producto(s) seleccionado(s)
+            </span>
+            <button type="button" className="px-btn px-btn-sm danger" onClick={handleBulkDelete} disabled={bulkDeleting}>
               Eliminar seleccionados
             </button>
-            <button type="button" className="admin-action-btn neutral" onClick={() => setSelected(new Set())}>
-              Cancelar selección
+            <button type="button" className="px-btn px-btn-sm secondary" onClick={() => setSelected(new Set())}>
+              Cancelar
             </button>
           </div>
         )}
 
-        {/* Alert banner */}
-        {kpis.critical > 0 && (
-          <div className="admin-alert-row rich warning" style={{ marginBottom: '0.75rem' }}>
-            <span className="admin-alert-icon">⚠️</span>
-            <strong>{kpis.critical} producto(s) en nivel crítico · {kpis.low - kpis.critical} más con stock bajo</strong>
-          </div>
-        )}
-
-        <div className="admin-stock-meta">
-          <span>Mostrando {pageProducts.length} de {displayProducts.length} productos</span>
-          <span>Pág. {safePage} de {totalPages}</span>
+        {/* ── Meta row ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', fontSize: '0.78rem', color: '#64748b' }}>
+          <span>Mostrando <strong style={{ color: '#0f172a' }}>{pageProducts.length}</strong> de {displayProducts.length} productos</span>
+          <span>Pág. {safePage} / {totalPages}</span>
         </div>
 
-        {/* Table */}
-        <div className="admin-table admin-stock-table-scroll">
-          <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '32px 2fr 80px 80px 90px 80px 80px 80px 1fr', gap: '0.5rem', padding: '0.5rem 0.75rem', alignItems: 'center' }}>
-            <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor: 'pointer' }} />
-            <span>Producto / SKU</span>
-            <span>Categoría</span>
-            <span>Precio</span>
-            <span>Actual</span>
-            <span>Reservado</span>
-            <span>Disponible</span>
-            <span>Mínimo</span>
-            <span>Acciones</span>
-          </div>
-
-          {pageProducts.map((product) => {
-            const stockMinimo = Number(product.stockMinimo) || 5
-            const stockReservado = Number(product.stockReservado) || 0
-            const stockDisponible = Math.max((Number(product.currentStock) || 0) - stockReservado, 0)
-            const isLow = stockDisponible < stockMinimo
-            const isCritical = stockDisponible < Math.ceil(stockMinimo / 2)
-            const isChecked = selected.has(product.id)
-            return (
-              <div key={product.id} className={`admin-table-row${isCritical ? ' alert' : isLow ? ' attention' : ''}`}
-                style={{ display: 'grid', gridTemplateColumns: '32px 2fr 80px 80px 90px 80px 80px 80px 1fr', gap: '0.5rem', padding: '0.5rem 0.75rem', alignItems: 'center', background: isChecked ? '#eff6ff' : undefined }}>
-                <input type="checkbox" checked={isChecked} onChange={() => toggleOne(product.id)} style={{ cursor: 'pointer' }} />
-                <div>
-                  <strong>{product.name}</strong>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{product.sku}{product.brand ? ` · ${product.brand}` : ''}</div>
-                </div>
-                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>{product.category || '—'}</span>
-                <span style={{ fontSize: '0.875rem' }}>{formatCurrency(product.price || 0)}</span>
-                <EditableNumberField
-                  value={product.currentStock}
-                  onCommit={(v) => updateProductStock(product.id, v, session.name)}
-                  suffix="uni"
-                />
-                <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{stockReservado}</span>
-                <strong style={{ color: isCritical ? '#e53e3e' : isLow ? '#d97706' : '#16a34a', fontSize: '0.875rem' }}>
-                  {stockDisponible}
-                </strong>
-                <EditableNumberField
-                  value={stockMinimo}
-                  onCommit={(v) => updateProductStockMinimo(product.id, v, session.name)}
-                  suffix="uni"
-                />
-                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                  <button type="button" className="admin-action-btn neutral" onClick={() => setStockAdjustProduct(product)} title="Registrar movimiento">
-                    Ajustar
-                  </button>
-                  <button type="button" className="admin-action-btn neutral" onClick={() => setEditingProduct(product)} title="Editar producto">
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-action-btn cancel"
-                    onClick={() => handleDeleteProduct(product)}
-                    disabled={productIdsInOrders.has(product.id)}
-                    title={productIdsInOrders.has(product.id) ? 'Tiene pedidos asociados' : 'Eliminar'}
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-
-          {pageProducts.length === 0 && (
-            <div className="admin-stock-empty">No hay productos con esa búsqueda o filtro.</div>
-          )}
+        {/* ── Table ── */}
+        <div className="px-table-wrap">
+          <table className="px-table">
+            <thead>
+              <tr>
+                <th style={{ width: 32 }}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor: 'pointer' }} />
+                </th>
+                <th>Producto / SKU</th>
+                <th>Categoría</th>
+                <th>Precio</th>
+                <th>Actual</th>
+                <th>Reservado</th>
+                <th>Disponible</th>
+                <th>Mínimo</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageProducts.map((product) => {
+                const stockMinimo = Number(product.stockMinimo) || 5
+                const stockReservado = Number(product.stockReservado) || 0
+                const stockDisponible = Math.max((Number(product.currentStock) || 0) - stockReservado, 0)
+                const isLow = stockDisponible < stockMinimo
+                const isCritical = stockDisponible < Math.ceil(stockMinimo / 2)
+                const isChecked = selected.has(product.id)
+                const rowBg = isChecked ? '#e8eaff' : isCritical ? '#fff7f7' : isLow ? '#fffbeb' : undefined
+                return (
+                  <tr key={product.id} style={{ background: rowBg }}>
+                    <td>
+                      <input type="checkbox" checked={isChecked} onChange={() => toggleOne(product.id)} style={{ cursor: 'pointer' }} />
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#0f172a' }}>{product.name}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{product.sku}{product.brand ? ` · ${product.brand}` : ''}</div>
+                    </td>
+                    <td>
+                      <span className="px-pill neutral" style={{ fontSize: '0.72rem' }}>{product.category || '—'}</span>
+                    </td>
+                    <td style={{ fontWeight: 600, fontSize: '0.85rem', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatCurrency(product.price || 0)}
+                    </td>
+                    <td>
+                      <EditableNumberField
+                        value={product.currentStock}
+                        onCommit={(v) => updateProductStock(product.id, v, session.name)}
+                        suffix="uni"
+                      />
+                    </td>
+                    <td style={{ color: '#64748b', fontSize: '0.85rem', fontVariantNumeric: 'tabular-nums' }}>
+                      {stockReservado}
+                    </td>
+                    <td>
+                      <span style={{
+                        fontWeight: 700,
+                        fontSize: '0.9rem',
+                        color: isCritical ? '#dc2626' : isLow ? '#d97706' : '#16a34a',
+                        display: 'flex', alignItems: 'center', gap: '0.3rem',
+                      }}>
+                        {isCritical && <span title="Crítico" style={{ fontSize: '0.75rem' }}>🔴</span>}
+                        {!isCritical && isLow && <span title="Bajo" style={{ fontSize: '0.75rem' }}>🟡</span>}
+                        {stockDisponible}
+                      </span>
+                    </td>
+                    <td>
+                      <EditableNumberField
+                        value={stockMinimo}
+                        onCommit={(v) => updateProductStockMinimo(product.id, v, session.name)}
+                        suffix="uni"
+                      />
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.3rem' }}>
+                        <button type="button" className="px-btn px-btn-sm secondary" onClick={() => setStockAdjustProduct(product)} title="Registrar movimiento">
+                          Ajustar
+                        </button>
+                        <button type="button" className="px-btn px-btn-sm secondary" onClick={() => setEditingProduct(product)} title="Editar producto">
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className="px-btn px-btn-sm danger"
+                          onClick={() => handleDeleteProduct(product)}
+                          disabled={productIdsInOrders.has(product.id)}
+                          title={productIdsInOrders.has(product.id) ? 'Tiene pedidos asociados' : 'Eliminar'}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+              {pageProducts.length === 0 && (
+                <tr>
+                  <td colSpan={9}>
+                    <div className="px-empty">No hay productos con esa búsqueda o filtro.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
 
-        {/* Pagination */}
+        {/* ── Pagination ── */}
         {totalPages > 1 && (
-          <div className="admin-stock-pagination">
-            <button type="button" className="admin-action-btn neutral" disabled={safePage <= 1} onClick={() => setStockPage(p => Math.max(p - 1, 1))}>Anterior</button>
-            <span>Pág. {safePage} de {totalPages}</span>
-            <button type="button" className="admin-action-btn neutral" disabled={safePage >= totalPages} onClick={() => setStockPage(p => Math.min(p + 1, totalPages))}>Siguiente</button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', paddingTop: '0.75rem', borderTop: '1px solid #e2e8f0', marginTop: '0.75rem' }}>
+            <button type="button" className="px-btn px-btn-sm secondary" disabled={safePage <= 1} onClick={() => setStockPage(p => Math.max(p - 1, 1))}>← Anterior</button>
+            <span style={{ fontSize: '0.83rem', color: '#64748b', fontWeight: 500 }}>Pág. {safePage} de {totalPages}</span>
+            <button type="button" className="px-btn px-btn-sm secondary" disabled={safePage >= totalPages} onClick={() => setStockPage(p => Math.min(p + 1, totalPages))}>Siguiente →</button>
           </div>
         )}
       </div>
