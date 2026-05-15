@@ -206,14 +206,19 @@ async function initDB() {
     INSERT INTO factura_numeracion (tipo, ultimo_numero) VALUES ('A', 0), ('B', 0), ('C', 0) ON CONFLICT DO NOTHING
   `);
 
-  const { rows } = await pool.query('SELECT COUNT(*) as count FROM users');
-  if (parseInt(rows[0].count, 10) === 0) {
-    const hashedClient = bcrypt.hashSync('cliente123', 8);
-    const hashedAdmin = bcrypt.hashSync('admin123', 8);
-    // Seed demo users (matches BRAND.demo in src/lib/brandConfig.js)
-    await pool.query('INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING', ['cliente@demo.com', hashedClient, 'client', 'Cliente Demo']);
-    await pool.query('INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING', ['admin@demo.com', hashedAdmin, 'admin', 'Administrador Demo']);
-  }
+  // Always ensure demo accounts exist (idempotent via ON CONFLICT).
+  // This guarantees cliente@demo.com / admin@demo.com work even when the
+  // database already has other users from previous brand iterations.
+  const hashedClient = bcrypt.hashSync('cliente123', 8);
+  const hashedAdmin = bcrypt.hashSync('admin123', 8);
+  await pool.query(
+    `INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING`,
+    ['cliente@demo.com', hashedClient, 'client', 'Cliente Demo']
+  );
+  await pool.query(
+    `INSERT INTO users (email, password, role, name) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING`,
+    ['admin@demo.com', hashedAdmin, 'admin', 'Administrador Demo']
+  );
   dbInitialized = true;
 }
 
@@ -399,11 +404,11 @@ app.post('/api/auth/login', async (req, res) => {
     const user = rows[0];
 
     if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ ok: false, message: 'Credenciales invÃ¡lidas.' });
+      return res.status(401).json({ ok: false, message: 'Credenciales inválidas.' });
     }
 
     if (user.is_active === false) {
-      return res.status(403).json({ ok: false, message: 'La cuenta estÃ¡ desactivada.' });
+      return res.status(403).json({ ok: false, message: 'La cuenta está desactivada.' });
     }
 
     await ensureUserProfile(user.id, { business_name: user.name });
@@ -439,11 +444,11 @@ app.post('/api/auth/register', async (req, res) => {
     const safeName = String(name ?? businessName ?? '').trim();
 
     if (!normalizedEmail || !safePassword || !safeName) {
-      return res.status(400).json({ ok: false, message: 'Email, contraseÃ±a y nombre son obligatorios.' });
+      return res.status(400).json({ ok: false, message: 'Email, contraseña y nombre son obligatorios.' });
     }
 
     if (safePassword.length < 6) {
-      return res.status(400).json({ ok: false, message: 'La contraseÃ±a debe tener al menos 6 caracteres.' });
+      return res.status(400).json({ ok: false, message: 'La contraseña debe tener al menos 6 caracteres.' });
     }
 
     const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
@@ -499,7 +504,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
     return res.json({ ok: true, ...payload });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Error obteniendo la sesiÃ³n.' });
+    return res.status(500).json({ ok: false, message: 'Error obteniendo la sesión.' });
   }
 });
 
@@ -703,7 +708,7 @@ app.post('/api/ai/conversations', authenticateToken, async (req, res) => {
 
     return res.status(201).json({ ok: true, conversation: rows[0] });
   } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Error creando conversaciÃ³n.' });
+    return res.status(500).json({ ok: false, message: 'Error creando conversación.' });
   }
 });
 
@@ -713,7 +718,7 @@ app.get('/api/ai/conversations/:id/messages', authenticateToken, async (req, res
     const conversationId = Number(req.params.id);
 
     if (!conversationId) {
-      return res.status(400).json({ ok: false, message: 'ID de conversaciÃ³n invÃ¡lido.' });
+      return res.status(400).json({ ok: false, message: 'ID de conversación inválido.' });
     }
 
     const { rows: conversationRows } = await pool.query(
@@ -722,7 +727,7 @@ app.get('/api/ai/conversations/:id/messages', authenticateToken, async (req, res
     );
 
     if (conversationRows.length === 0) {
-      return res.status(404).json({ ok: false, message: 'ConversaciÃ³n no encontrada.' });
+      return res.status(404).json({ ok: false, message: 'Conversación no encontrada.' });
     }
 
     const { rows } = await pool.query(
@@ -742,7 +747,7 @@ app.get('/api/ai/conversations/:id/messages', authenticateToken, async (req, res
 app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, res) => {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Cloudflare no estÃ¡ configurado.' });
+  if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Cloudflare no está configurado.' });
 
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ ok: false, error: 'Missing clientId' });
@@ -760,10 +765,10 @@ app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, 
     const totalSpent = clientOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
     const daysWithoutBuying = client.lastPurchase
       ? Math.floor((Date.now() - new Date(client.lastPurchase.createdAt).getTime()) / (1000 * 60 * 60 * 24))
-      : 'Nunca comprÃ³';
+      : 'Nunca compró';
 
-    const systemPrompt = `Eres el ASISTENTE OPERATIVO de AndrÃ©s Merino PinturerÃ­a. Tu tarea es analizar los datos de un cliente y generar una recomendaciÃ³n comercial corta y directa (mÃ¡ximo 3 oraciones). No saludes, ve directamente a las observaciones.`;
-    const prompt = `Analiza este cliente: Nombre: ${client.businessName}. Saldo pendiente: $${client.pendingBalance ?? 0}. Cantidad de pedidos: ${clientOrders.length}. Total gastado histÃ³rico: $${totalSpent}. DÃ­as desde su Ãºltima compra: ${daysWithoutBuying}. Genera tu recomendaciÃ³n comercial.`;
+    const systemPrompt = `Eres el ASISTENTE OPERATIVO de Andres Merino Pintureria. Tu tarea es analizar los datos de un cliente y generar una recomendación comercial corta y directa (máximo 3 oraciones). No saludes, ve directamente a las observaciones.`;
+    const prompt = `Analiza este cliente: Nombre: ${client.businessName}. Saldo pendiente: $${client.pendingBalance ?? 0}. Cantidad de pedidos: ${clientOrders.length}. Total gastado histórico: $${totalSpent}. Días desde su última compra: ${daysWithoutBuying}. Genera tu recomendación comercial.`;
 
     const model = '@cf/meta/llama-3.1-8b-instruct';
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
@@ -776,11 +781,11 @@ app.post('/api/ai/analyze-client', authenticateToken, requireAdmin, async (req, 
     const data = await response.json();
     res.json({ ok: true, recommendation: data.result.response || data.result });
   } catch (error) {
-    res.status(500).json({ ok: false, error: 'Error al generar anÃ¡lisis.' });
+    res.status(500).json({ ok: false, error: 'Error al generar análisis.' });
   }
 });
 
-// â”€â”€ CONFIGURACIÃ“N DE IA CON HERRAMIENTAS DIRECTAS A POSTGRES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── CONFIGURACION DE IA CON HERRAMIENTAS DIRECTAS A POSTGRES ─────────────────────────────
 const ADMIN_TOOLS = [
   // ── Clientes ──────────────────────────────────────────────────────────────
   {
@@ -892,7 +897,7 @@ const ADMIN_TOOLS = [
 const CLIENT_TOOLS = [
   {
     name: "search_product",
-    description: "Busca detalles, descripciÃ³n o precio de un producto especÃ­fico.",
+    description: "Busca detalles, descripción o precio de un producto específico.",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] }
   }
 ];
@@ -1331,13 +1336,13 @@ app.post('/api/ai/chat', authenticateToken, async (req, res) => {
   if (!accountId || !apiToken) return res.status(500).json({ ok: false, error: 'Falta cloudflare vars' });
 
   await initDB();
-  const SYSTEM_PROMPT_ADMIN = `# INTERNAL ASSISTANT â€” ANDRÃ‰S MERINO PINTURERÃA CRM
+  const SYSTEM_PROMPT_ADMIN = `# INTERNAL ASSISTANT — ANDRÃ‰S MERINO PINTURERÃA CRM
 
 ## ROLE AND CONTEXT
 
-You are the internal management assistant for the AndrÃ©s Merino PinturerÃ­a CRM. You operate exclusively for authorized internal users. Your purpose is to support commercial and operational decision-making based on available system data.
+You are the internal management assistant for the Andres Merino Pintureria CRM. You operate exclusively for authorized internal users. Your purpose is to support commercial and operational decision-making based on available system data.
 
-**Business:** Wholesale paint distributor with 20 branches across Argentina. Primary customers: hardware stores (ferreterÃ­as) and paint shops (pintolerÃ­as).
+**Business:** Wholesale paint distributor with 20 branches across Argentina. Primary customers: hardware stores (ferreterías) and paint shops (pintolerías).
 
 **Available system data:** customers, orders, inventory, accounts receivable, zone-based sales reps, purchase history, outstanding debts, and sales metrics.
 
@@ -1410,13 +1415,13 @@ The authenticated user has **full system access**. This includes:
 - Do not repeat unnecessary information or ask clarifying questions if context is already sufficient.
 - Never share one customer's information with another user without explicit administrator authorization.
 - When facing ambiguity, ask only the minimum clarification needed to proceed.`;
-  const SYSTEM_PROMPT_CLIENTE = `# CUSTOMER-FACING ASSISTANT â€” ANDRÃ‰S MERINO PINTURERÃA
+  const SYSTEM_PROMPT_CLIENTE = `# CUSTOMER-FACING ASSISTANT — ANDRÃ‰S MERINO PINTURERÃA
 
 ## ROLE AND CONTEXT
 
-You are the virtual assistant for AndrÃ©s Merino PinturerÃ­a, a wholesale paint distributor
-with 20 branches across Argentina. You assist registered wholesale customers â€”
-hardware stores (ferreterÃ­as), paint shops (pinturerÃ­as), and distributors.
+You are the virtual assistant for Andres Merino Pintureria, a wholesale paint distributor
+with 20 branches across Argentina. You assist registered wholesale customers —
+hardware stores (ferreterías), paint shops (pinturerías), and distributors.
 
 You operate within the **customer-facing portal only**. You have no access to internal
 systems, other customers' data, pricing databases, stock levels, or any administrative
@@ -1455,7 +1460,7 @@ to their sales rep or the appropriate channel.
 - If the customer asks about a specific product, ask for the product code or
   commercial name to help identify it.
 - Always clarify that final pricing and availability are confirmed by their
-  assigned sales rep or through the portal â€” never state prices as definitive.
+  assigned sales rep or through the portal — never state prices as definitive.
 
 ### 2. Order Status
 - Help the customer navigate to "My Orders" in their dashboard for real-time status.
@@ -1487,7 +1492,7 @@ to their sales rep or the appropriate channel.
 - **Never discuss internal business data** (sales figures, vendor quotas,
   branch performance, etc.).
 - If a question falls outside the customer's own dashboard scope,
-  respond with: "That information isn't available here â€” I'd recommend
+  respond with: "That information isn't available here — I'd recommend
   reaching out to your sales rep directly."
 
 ---
@@ -1498,7 +1503,7 @@ to their sales rep or the appropriate channel.
   and a professional but approachable tone.
 - Use short bullet lists when they help clarity.
 - If you don't have an exact answer, say so clearly and offer the right channel to get it.
-- Keep responses focused and concise â€” the customer is here to operate, not to browse.
+- Keep responses focused and concise — the customer is here to operate, not to browse.
 - Never volunteer information the customer didn't ask for.`;
 
   const systemPrompt = userRole === 'admin' ? SYSTEM_PROMPT_ADMIN : SYSTEM_PROMPT_CLIENTE;
@@ -1516,7 +1521,7 @@ to their sales rep or the appropriate channel.
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ ok: false, error: 'Cloudflare devolviÃ³ error: ' + errText });
+      return res.status(response.status).json({ ok: false, error: 'Cloudflare devolvió error: ' + errText });
     }
     let data = await response.json();
 
@@ -1531,7 +1536,7 @@ to their sales rep or the appropriate channel.
           messages: [
             { role: 'system', content: systemPrompt },
             ...cleanMessages,
-            { role: 'user', content: `[Admin Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolviÃ³:\n${toolResult}\nResponde a mi pedido usando esto.]` }
+            { role: 'user', content: `[Admin Tool Result: he ejecutado '${toolCall.name}' y la Base de Datos devolvió:\n${toolResult}\nResponde a mi pedido usando esto.]` }
           ]
         })
       });
@@ -1545,7 +1550,7 @@ to their sales rep or the appropriate channel.
   }
 });
 
-// ExportaciÃ³n que Vercel utiliza para instanciar el servidor Serverless
+// Exportación que Vercel utiliza para instanciar el servidor Serverless
 async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools }) {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
