@@ -6958,7 +6958,7 @@ export function AdminDashboard() {
   }, [editingClient, isCreatingClient])
 
   return (
-      <main className="admin-crm-page">
+      <main className={`admin-crm-page${activeSection === 'ia' ? ' ai-fixed' : ''}`}>
         <aside className={isSidebarOpen ? 'admin-sidebar open' : 'admin-sidebar'}>
           <div className="admin-sidebar-brand">
             <NexoftWordmark size="md" tone="light" />
