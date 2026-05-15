@@ -321,6 +321,124 @@
   flex: 1;
 }
 
+/* Confirmación de solicitud enviada */
+.login-request-sent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 0.5rem;
+  margin-top: 0.5rem;
+}
+.login-request-sent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: #22c55e;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.login-request-sent h3 {
+  margin: 0;
+  color: #166534;
+  font-size: 1rem;
+}
+.login-request-sent p {
+  margin: 0;
+  color: #166534;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Panel admin: sección solicitudes */
+.admin-solicitudes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.admin-solicitud-card {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.admin-solicitud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.admin-solicitud-header strong {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.admin-solicitud-contact {
+  color: var(--color-text-secondary, #6b7280);
+  font-weight: 400;
+  font-size: 0.875rem;
+}
+.admin-solicitud-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary, #6b7280);
+}
+.admin-solicitud-message {
+  font-size: 0.875rem;
+  color: var(--color-text, #374151);
+  font-style: italic;
+  border-left: 3px solid var(--color-accent, #FFD100);
+  padding-left: 0.75rem;
+  margin: 0;
+}
+.admin-solicitud-rejection {
+  font-size: 0.82rem;
+  color: #b91c1c;
+  margin: 0;
+}
+.admin-solicitud-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.admin-tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  margin-bottom: 0.5rem;
+}
+.admin-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.admin-tab-btn.active {
+  color: var(--color-brand, #1A1FBE);
+  border-bottom-color: var(--color-brand, #1A1FBE);
+}
+.admin-tab-btn:hover:not(.active) {
+  color: var(--color-text, #111);
+}
+
 .secondary-button {
   background: transparent;
   border: 1px solid rgba(0, 0, 0, 0.16);
@@ -2445,6 +2563,12 @@
 .admin-action-btn.neutral {
   background: #f7f9fc;
   color: #1A1FBE;
+}
+
+.admin-action-btn.danger {
+  background: #fde5e3;
+  color: #bf2f22;
+  border-color: #f3c3be;
 }
 
 .admin-action-btn:disabled {

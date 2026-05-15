@@ -202,6 +202,26 @@ async function initDB() {
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT 'admin'`);
+
+  // Solicitudes de acceso de nuevos clientes
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_requests (
+      id SERIAL PRIMARY KEY,
+      business_name TEXT NOT NULL,
+      contact_name TEXT,
+      email TEXT NOT NULL,
+      phone TEXT,
+      tax_id TEXT,
+      message TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TIMESTAMPTZ,
+      rejection_reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_requests_status ON client_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_client_requests_email ON client_requests(email);
+  `);
   await pool.query(`
     INSERT INTO factura_numeracion (tipo, ultimo_numero) VALUES ('A', 0), ('B', 0), ('C', 0) ON CONFLICT DO NOTHING
   `);
@@ -598,6 +618,190 @@ app.post('/api/admin/clients', authenticateToken, requireAdmin, async (req, res)
   } catch (error) {
     console.error('Admin create client error:', error);
     return res.status(500).json({ ok: false, message: 'Error interno al crear el cliente.' });
+  }
+});
+
+// ── Solicitudes de acceso (público) ──────────────────────────────────────────
+app.post('/api/auth/request-access', async (req, res) => {
+  try {
+    await initDB();
+    const { businessName, contactName, email, phone, taxId, message } = req.body ?? {};
+
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const safeBusinessName = String(businessName ?? '').trim();
+
+    if (!normalizedEmail || !safeBusinessName) {
+      return res.status(400).json({ ok: false, message: 'Email y razon social son obligatorios.' });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ ok: false, message: 'El email no es valido.' });
+    }
+
+    // Evitar duplicados: mismo email sin aprobar
+    const existing = await pool.query(
+      `SELECT id FROM client_requests WHERE email = $1 AND status = 'pending'`,
+      [normalizedEmail],
+    );
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ ok: false, message: 'Ya existe una solicitud pendiente con ese email.' });
+    }
+
+    // También verificar que no sea ya cliente
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ ok: false, message: 'Ya existe una cuenta con ese email. Podés iniciar sesion directamente.' });
+    }
+
+    await pool.query(
+      `INSERT INTO client_requests (business_name, contact_name, email, phone, tax_id, message)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        safeBusinessName,
+        String(contactName ?? '').trim() || null,
+        normalizedEmail,
+        String(phone ?? '').trim() || null,
+        String(taxId ?? '').trim() || null,
+        String(message ?? '').trim() || null,
+      ],
+    );
+
+    return res.status(201).json({ ok: true, message: 'Solicitud enviada. Te contactaremos a la brevedad.' });
+  } catch (error) {
+    console.error('Request access error:', error);
+    return res.status(500).json({ ok: false, message: 'Error interno. Intentalo de nuevo.' });
+  }
+});
+
+// ── Admin: gestión de solicitudes ────────────────────────────────────────────
+app.get('/api/admin/client-requests', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const status = req.query.status || 'pending';
+    const { rows } = await pool.query(
+      `SELECT cr.*, u.name AS reviewer_name
+       FROM client_requests cr
+       LEFT JOIN users u ON u.id = cr.reviewed_by
+       WHERE ($1 = 'all' OR cr.status = $1)
+       ORDER BY cr.created_at DESC
+       LIMIT 100`,
+      [status],
+    );
+    return res.json({ ok: true, requests: rows });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Error obteniendo solicitudes.' });
+  }
+});
+
+app.post('/api/admin/client-requests/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const requestId = Number(req.params.id);
+    const { password, creditLimit, category, paymentTerms, specialDiscount, note } = req.body ?? {};
+
+    const { rows } = await pool.query('SELECT * FROM client_requests WHERE id = $1', [requestId]);
+    if (rows.length === 0) return res.status(404).json({ ok: false, message: 'Solicitud no encontrada.' });
+
+    const request = rows[0];
+    if (request.status !== 'pending') {
+      return res.status(409).json({ ok: false, message: 'La solicitud ya fue procesada.' });
+    }
+
+    const safePassword = String(password ?? '').trim();
+    if (!safePassword || safePassword.length < 6) {
+      return res.status(400).json({ ok: false, message: 'Ingresa una contraseña de al menos 6 caracteres para el cliente.' });
+    }
+
+    // Verificar que el email no haya sido tomado mientras tanto
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [request.email]);
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ ok: false, message: 'Ya existe un usuario con ese email.' });
+    }
+
+    // Crear cuenta de acceso
+    const passwordHash = bcrypt.hashSync(safePassword, 10);
+    const { rows: userRows } = await pool.query(
+      `INSERT INTO users (email, password, role, name, is_active, created_at, updated_at)
+       VALUES ($1, $2, 'client', $3, TRUE, NOW(), NOW()) RETURNING *`,
+      [request.email, passwordHash, request.contact_name || request.business_name],
+    );
+    const user = userRows[0];
+
+    const profilePayload = {
+      business_name: request.business_name,
+      phone: request.phone || '',
+      tax_id: request.tax_id || '',
+    };
+    await ensureUserProfile(user.id, profilePayload);
+
+    // Sincronizar en app_state con datos comerciales
+    const currentState = await getAppStateRecord();
+    if (currentState && Array.isArray(currentState.clients)) {
+      const alreadyIn = currentState.clients.some((c) => c.email === request.email);
+      if (!alreadyIn) {
+        const nextClient = {
+          id: user.id,
+          name: request.contact_name || request.business_name,
+          businessName: request.business_name,
+          email: request.email,
+          phone: request.phone || '',
+          altPhone: '',
+          taxId: request.tax_id || '',
+          address: '',
+          city: '',
+          province: '',
+          preferredBranch: '',
+          category: String(category ?? 'Ferreteria'),
+          status: 'Activo',
+          note: String(note ?? request.message ?? ''),
+          pendingBalance: 0,
+          creditLimit: Number(creditLimit) || 0,
+          specialDiscount: Number(specialDiscount) || 0,
+          paymentTerms: String(paymentTerms ?? 'Contado'),
+          paymentHistory: [],
+          activityLog: [],
+          orderHistory: [],
+          points: 0,
+          lifetime_points: 0,
+          available_points: 0,
+          createdAt: new Date().toISOString(),
+        };
+        currentState.clients = [nextClient, ...currentState.clients];
+        await saveAppStateRecord(currentState);
+      }
+    }
+
+    // Marcar solicitud como aprobada
+    await pool.query(
+      `UPDATE client_requests SET status = 'approved', reviewed_by = $1, reviewed_at = NOW() WHERE id = $2`,
+      [req.user.id, requestId],
+    );
+
+    return res.json({ ok: true, userId: user.id, email: user.email });
+  } catch (error) {
+    console.error('Approve request error:', error);
+    return res.status(500).json({ ok: false, message: 'Error al aprobar la solicitud.' });
+  }
+});
+
+app.post('/api/admin/client-requests/:id/reject', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await initDB();
+    const requestId = Number(req.params.id);
+    const { reason } = req.body ?? {};
+
+    const { rows } = await pool.query('SELECT id, status FROM client_requests WHERE id = $1', [requestId]);
+    if (rows.length === 0) return res.status(404).json({ ok: false, message: 'Solicitud no encontrada.' });
+    if (rows[0].status !== 'pending') return res.status(409).json({ ok: false, message: 'La solicitud ya fue procesada.' });
+
+    await pool.query(
+      `UPDATE client_requests SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), rejection_reason = $2 WHERE id = $3`,
+      [req.user.id, String(reason ?? '').trim() || null, requestId],
+    );
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Error al rechazar la solicitud.' });
   }
 });
 

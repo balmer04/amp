@@ -25,6 +25,7 @@ const adminSections = [
   { id: 'facturacion', label: 'Facturación' },
   { id: 'promociones', label: 'Promociones' },
   { id: 'clientes', label: 'Clientes' },
+  { id: 'solicitudes', label: 'Solicitudes de acceso' },
   { id: 'cobranzas', label: 'Cobranzas' },
   { id: 'chats', label: 'Chats' },
   { id: 'stock', label: 'Productos y stock' },
@@ -44,7 +45,7 @@ const adminSectionGroups = [
   },
   {
     title: 'Clientes',
-    items: ['clientes', 'cobranzas', 'chats'],
+    items: ['clientes', 'solicitudes', 'cobranzas', 'chats'],
   },
   {
     title: 'Catálogo',
@@ -150,6 +151,14 @@ function AdminSidebarIcon({ sectionId }) {
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 3h7l4 4v14H7z" />
           <path d="M14 3v4h4M10 12h6M10 16h4" />
+        </svg>
+      )
+    case 'solicitudes':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="8" r="3.5" />
+          <path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" />
+          <path d="M17 4l1.5 1.5L22 2" />
         </svg>
       )
     default:
@@ -2716,6 +2725,252 @@ function ProductImportModal({ isOpen, onClose, existingProducts, onImport }) {
   )
 }
 
+// ─── Solicitudes de acceso de nuevos clientes ────────────────────────────────
+function SolicitudesSection({ session, onApproved }) {
+  const [requests, setRequests] = useState([])
+  const [tab, setTab] = useState('pending')
+  const [loading, setLoading] = useState(true)
+  const [approvingId, setApprovingId] = useState(null)
+  const [approveModal, setApproveModal] = useState(null) // { request }
+  const [approvePassword, setApprovePassword] = useState('')
+  const [approveCreditLimit, setApproveCreditLimit] = useState('0')
+  const [approveCategory, setApproveCategory] = useState('Ferreteria')
+  const [approveError, setApproveError] = useState('')
+
+  const fetchRequests = async (status = tab) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/client-requests?status=${status}`, {
+        headers: { Authorization: `Bearer ${session?.token}` },
+      })
+      const data = await res.json()
+      if (data.ok) setRequests(data.requests || [])
+    } catch {
+      // noop
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchRequests(tab)
+  }, [tab])
+
+  const handleReject = async (id) => {
+    const reason = window.prompt('Motivo del rechazo (opcional):')
+    if (reason === null) return
+    try {
+      await fetch(`/api/admin/client-requests/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.token}` },
+        body: JSON.stringify({ reason }),
+      })
+      fetchRequests(tab)
+    } catch { /* noop */ }
+  }
+
+  const handleOpenApprove = (req) => {
+    setApproveModal(req)
+    setApprovePassword('')
+    setApproveCreditLimit('0')
+    setApproveCategory('Ferreteria')
+    setApproveError('')
+  }
+
+  const handleConfirmApprove = async () => {
+    if (!approveModal) return
+    setApproveError('')
+    if (approvePassword.length < 6) {
+      setApproveError('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    setApprovingId(approveModal.id)
+    try {
+      const res = await fetch(`/api/admin/client-requests/${approveModal.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.token}` },
+        body: JSON.stringify({
+          password: approvePassword,
+          creditLimit: Number(approveCreditLimit) || 0,
+          category: approveCategory,
+        }),
+      })
+      const result = await res.json()
+      if (!result.ok) {
+        setApproveError(result.message || 'Error al aprobar.')
+        return
+      }
+      setApproveModal(null)
+      fetchRequests(tab)
+      if (onApproved) onApproved()
+    } catch {
+      setApproveError('Error de conexión.')
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  const pendingCount = requests.filter((r) => r.status === 'pending').length
+
+  return (
+    <section className="admin-section">
+      <div className="admin-section-header">
+        <div>
+          <span className="admin-card-eyebrow">Clientes</span>
+          <h2>Solicitudes de acceso</h2>
+        </div>
+        <button type="button" className="admin-action-btn" onClick={() => fetchRequests(tab)}>
+          Actualizar
+        </button>
+      </div>
+
+      <div className="admin-tab-bar">
+        {[
+          { key: 'pending', label: `Pendientes${pendingCount > 0 && tab !== 'pending' ? ` (${pendingCount})` : ''}` },
+          { key: 'approved', label: 'Aprobadas' },
+          { key: 'rejected', label: 'Rechazadas' },
+          { key: 'all', label: 'Todas' },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={`admin-tab-btn${tab === t.key ? ' active' : ''}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p className="admin-empty-msg">Cargando solicitudes...</p>
+      ) : requests.length === 0 ? (
+        <div className="admin-all-clear">
+          {tab === 'pending' ? 'No hay solicitudes pendientes ✓' : 'No hay solicitudes en este estado.'}
+        </div>
+      ) : (
+        <div className="admin-solicitudes-list">
+          {requests.map((req) => (
+            <div key={req.id} className="admin-solicitud-card">
+              <div className="admin-solicitud-header">
+                <div>
+                  <strong>{req.business_name}</strong>
+                  {req.contact_name ? <span className="admin-solicitud-contact"> · {req.contact_name}</span> : null}
+                </div>
+                <span className={`admin-status-badge ${req.status === 'pending' ? 'pendiente' : req.status === 'approved' ? 'aprobado' : 'cancelado'}`}>
+                  {req.status === 'pending' ? 'Pendiente' : req.status === 'approved' ? 'Aprobada' : 'Rechazada'}
+                </span>
+              </div>
+              <div className="admin-solicitud-meta">
+                <span>{req.email}</span>
+                {req.phone ? <span>{req.phone}</span> : null}
+                {req.tax_id ? <span>CUIT: {req.tax_id}</span> : null}
+                <span>{new Date(req.created_at).toLocaleDateString('es-AR')}</span>
+              </div>
+              {req.message ? (
+                <p className="admin-solicitud-message">"{req.message}"</p>
+              ) : null}
+              {req.status === 'rejected' && req.rejection_reason ? (
+                <p className="admin-solicitud-rejection">Motivo: {req.rejection_reason}</p>
+              ) : null}
+              {req.status === 'pending' ? (
+                <div className="admin-solicitud-actions">
+                  <button
+                    type="button"
+                    className="admin-action-btn danger"
+                    onClick={() => handleReject(req.id)}
+                  >
+                    Rechazar
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-primary-btn"
+                    onClick={() => handleOpenApprove(req)}
+                  >
+                    Aprobar y crear acceso
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {approveModal ? (
+        <div className="admin-modal-backdrop" role="presentation" onClick={() => setApproveModal(null)}>
+          <div
+            className="admin-modal-card"
+            role="dialog"
+            aria-modal="true"
+            style={{ maxWidth: 480 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="admin-modal-header">
+              <div>
+                <span className="admin-card-eyebrow">Aprobar solicitud</span>
+                <h3>{approveModal.business_name}</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #666)', margin: '4px 0 0' }}>
+                  {approveModal.email}
+                </p>
+              </div>
+              <button type="button" className="admin-modal-close" onClick={() => setApproveModal(null)}>✕</button>
+            </div>
+
+            <div className="admin-form-grid" style={{ marginTop: 16 }}>
+              <label className="admin-form-field">
+                <span>Contraseña de acceso *</span>
+                <input
+                  type="password"
+                  placeholder="Mínimo 6 caracteres"
+                  value={approvePassword}
+                  onChange={(e) => setApprovePassword(e.target.value)}
+                />
+              </label>
+              <label className="admin-form-field">
+                <span>Tipo de cliente</span>
+                <select value={approveCategory} onChange={(e) => setApproveCategory(e.target.value)}>
+                  <option value="Ferreteria">Ferretería</option>
+                  <option value="Pintureria">Pinturería</option>
+                  <option value="Constructora">Constructora</option>
+                  <option value="Particular">Particular</option>
+                </select>
+              </label>
+              <label className="admin-form-field">
+                <span>Límite de crédito ($)</span>
+                <input
+                  type="number"
+                  value={approveCreditLimit}
+                  onChange={(e) => setApproveCreditLimit(e.target.value)}
+                />
+              </label>
+            </div>
+
+            {approveError ? (
+              <p style={{ color: 'var(--color-danger, #c0392b)', fontSize: '0.875rem', margin: '8px 0' }}>
+                {approveError}
+              </p>
+            ) : null}
+
+            <div className="admin-modal-footer">
+              <button type="button" className="admin-action-btn neutral" onClick={() => setApproveModal(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="admin-primary-btn"
+                onClick={handleConfirmApprove}
+                disabled={!!approvingId}
+              >
+                {approvingId ? 'Creando cuenta...' : 'Confirmar y habilitar acceso'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 // ─── Cobranzas: vista dedicada de cuentas por cobrar con aging buckets ─────
 function CobranzasSection({ clients, orders, onOpenClient }) {
   const data = useMemo(() => {
@@ -4375,6 +4630,24 @@ export function AdminDashboard() {
     [chatConversations],
   )
 
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0)
+  useEffect(() => {
+    if (!session?.token) return
+    const load = () => {
+      fetch('/api/admin/client-requests?status=pending', {
+        headers: { Authorization: `Bearer ${session.token}` },
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.ok) setPendingRequestsCount((data.requests || []).length)
+        })
+        .catch(() => {})
+    }
+    load()
+    const interval = setInterval(load, 30000)
+    return () => clearInterval(interval)
+  }, [session?.token])
+
   const handleCreateClientFromDashboard = () => {
     navigateToSection('clientes')
     setIsCreatingClient(true)
@@ -5006,6 +5279,9 @@ export function AdminDashboard() {
                         </span>
                         {section.id === 'chats' && adminUnreadChatsCount > 0 ? (
                           <span className="admin-sidebar-badge">{adminUnreadChatsCount}</span>
+                        ) : null}
+                        {section.id === 'solicitudes' && pendingRequestsCount > 0 ? (
+                          <span className="admin-sidebar-badge">{pendingRequestsCount}</span>
                         ) : null}
                       </button>
                     )
@@ -5662,6 +5938,16 @@ export function AdminDashboard() {
               onOpenClient={(id) => {
                 setSelectedClientId(id)
                 setActiveSection('clientes')
+              }}
+            />
+          ) : null}
+
+          {activeSection === 'solicitudes' ? (
+            <SolicitudesSection
+              session={session}
+              onApproved={() => {
+                // Forzar reload del estado para que el nuevo cliente aparezca
+                setTimeout(() => {}, 500)
               }}
             />
           ) : null}

@@ -9,29 +9,27 @@ const quickAccessUsers = BRAND.demo.enabled
   : null
 
 export function LoginPage() {
-  const { session, login, register, isAuthenticated, isRefreshing, logout } = useAuth()
+  const { session, login, isAuthenticated, isRefreshing, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  })
+  const [formData, setFormData] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Formulario de solicitud de acceso
   const [showRequestForm, setShowRequestForm] = useState(false)
   const [isRequestSubmitting, setIsRequestSubmitting] = useState(false)
   const [requestSent, setRequestSent] = useState(false)
   const [requestError, setRequestError] = useState('')
   const [requestData, setRequestData] = useState({
-    nombre: '',
-    cuit: '',
-    telefono: '',
+    businessName: '',
+    contactName: '',
+    taxId: '',
+    phone: '',
     email: '',
-    password: '',
+    message: '',
   })
 
-  // No more auto-redirect: the user explicitly continues if there's a valid session
   const continueToPanel = () => {
     if (session?.role) {
       navigate(session.role === 'admin' ? '/admin' : '/cliente', { replace: true })
@@ -47,19 +45,16 @@ export function LoginPage() {
     setIsSubmitting(true)
     try {
       const result = await login(credentials)
-
       if (!result.ok) {
         setError(result.message)
         return
       }
-
       const redirectPath =
         location.state?.from && location.state.from !== '/'
           ? location.state.from
           : result.role === 'admin'
             ? '/admin'
             : '/cliente'
-
       navigate(redirectPath, { replace: true })
     } finally {
       setIsSubmitting(false)
@@ -70,6 +65,14 @@ export function LoginPage() {
     event.preventDefault()
     setError('')
     submitLogin()
+  }
+
+  const handleQuickAccess = async (role) => {
+    if (!quickAccessUsers) return
+    const credentials = quickAccessUsers[role]
+    setFormData(credentials)
+    setError('')
+    await submitLogin(credentials)
   }
 
   const handleRequestChange = (event) => {
@@ -83,14 +86,12 @@ export function LoginPage() {
     setIsRequestSubmitting(true)
 
     try {
-      const result = await register({
-        name: requestData.nombre,
-        businessName: requestData.nombre,
-        taxId: requestData.cuit,
-        phone: requestData.telefono,
-        email: requestData.email,
-        password: requestData.password,
+      const res = await fetch('/api/auth/request-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData),
       })
+      const result = await res.json()
 
       if (!result.ok) {
         setRequestError(result.message)
@@ -98,18 +99,11 @@ export function LoginPage() {
       }
 
       setRequestSent(true)
-      navigate('/cliente', { replace: true })
+    } catch {
+      setRequestError('Error de conexión. Intentalo de nuevo.')
     } finally {
       setIsRequestSubmitting(false)
     }
-  }
-
-  const handleQuickAccess = async (role) => {
-    if (!quickAccessUsers) return
-    const credentials = quickAccessUsers[role]
-    setFormData(credentials)
-    setError('')
-    await submitLogin(credentials)
   }
 
   return (
@@ -138,18 +132,10 @@ export function LoginPage() {
                 </p>
               </div>
               <div className="login-resume-actions">
-                <button
-                  type="button"
-                  className="pill-button"
-                  onClick={() => logout()}
-                >
+                <button type="button" className="pill-button" onClick={() => logout()}>
                   Cerrar sesión
                 </button>
-                <button
-                  type="button"
-                  className="primary-button login-resume-cta"
-                  onClick={continueToPanel}
-                >
+                <button type="button" className="primary-button login-resume-cta" onClick={continueToPanel}>
                   Continuar al panel →
                 </button>
               </div>
@@ -172,7 +158,7 @@ export function LoginPage() {
             </label>
 
             <label className="field">
-              <span>Contrasena</span>
+              <span>Contraseña</span>
               <input
                 type="password"
                 name="password"
@@ -216,103 +202,133 @@ export function LoginPage() {
 
           <div className="login-request-card">
             <p className="login-request-eyebrow">Acceso mayorista</p>
-            <h3>Crea tu cuenta profesional</h3>
 
             {!showRequestForm ? (
               <>
+                <h3>¿Sos cliente mayorista?</h3>
                 <p>
-                  Si tenés una empresa o perfil profesional, creá tu cuenta
-                  para acceder al portal mayorista.
+                  Solicitá acceso al portal. Revisamos tu solicitud y te habilitamos
+                  la cuenta en menos de 24 horas.
                 </p>
                 <button
                   type="button"
                   className="login-request-button"
                   onClick={() => setShowRequestForm(true)}
                 >
-                  Crear cuenta profesional
+                  Solicitar acceso →
                 </button>
               </>
             ) : requestSent ? (
-              <p style={{ color: '#10b981', fontWeight: '600', marginTop: '1rem' }}>
-                Cuenta creada con exito. Redirigiendo a tu panel...
-              </p>
+              <div className="login-request-sent">
+                <span className="login-request-sent-icon" aria-hidden="true">✓</span>
+                <h3>¡Solicitud enviada!</h3>
+                <p>
+                  Recibimos tu solicitud. Nuestro equipo la va a revisar
+                  y te contactamos a la brevedad para habilitarte el acceso.
+                </p>
+                <button
+                  type="button"
+                  className="login-request-button"
+                  onClick={() => {
+                    setShowRequestForm(false)
+                    setRequestSent(false)
+                    setRequestData({ businessName: '', contactName: '', taxId: '', phone: '', email: '', message: '' })
+                  }}
+                >
+                  Volver al inicio
+                </button>
+              </div>
             ) : (
-              <form className="request-form" onSubmit={handleRequestSubmit}>
-                <label className="field">
-                  <span>Nombre o Razon Social</span>
-                  <input
-                    type="text"
-                    name="nombre"
-                    placeholder="Ej: Distribuidora del Sur"
-                    value={requestData.nombre}
-                    onChange={handleRequestChange}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span>CUIT / RUT</span>
-                  <input
-                    type="text"
-                    name="cuit"
-                    placeholder="XX-XXXXXXXX-X"
-                    value={requestData.cuit}
-                    onChange={handleRequestChange}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span>Telefono</span>
-                  <input
-                    type="tel"
-                    name="telefono"
-                    placeholder="11 1234 5678"
-                    value={requestData.telefono}
-                    onChange={handleRequestChange}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span>Email</span>
-                  <input
-                    type="email"
-                    name="email"
-                    placeholder="correo@ejemplo.com"
-                    value={requestData.email}
-                    onChange={handleRequestChange}
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span>Contrasena</span>
-                  <input
-                    type="password"
-                    name="password"
-                    placeholder="Minimo 6 caracteres"
-                    value={requestData.password}
-                    onChange={handleRequestChange}
-                    minLength={6}
-                    required
-                  />
-                </label>
+              <>
+                <h3>Solicitar acceso al portal</h3>
+                <form className="request-form" onSubmit={handleRequestSubmit}>
+                  <label className="field">
+                    <span>Nombre o Razón Social *</span>
+                    <input
+                      type="text"
+                      name="businessName"
+                      placeholder="Ej: Ferretería del Sur"
+                      value={requestData.businessName}
+                      onChange={handleRequestChange}
+                      required
+                    />
+                  </label>
 
-                {requestError ? <p className="form-error">{requestError}</p> : null}
+                  <label className="field">
+                    <span>Nombre de contacto</span>
+                    <input
+                      type="text"
+                      name="contactName"
+                      placeholder="Tu nombre"
+                      value={requestData.contactName}
+                      onChange={handleRequestChange}
+                    />
+                  </label>
 
-                <div className="request-form-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => {
-                      setShowRequestForm(false)
-                      setRequestError('')
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                  <button type="submit" className="primary-button" disabled={isRequestSubmitting}>
-                    {isRequestSubmitting ? 'Creando cuenta...' : 'Crear cuenta'}
-                  </button>
-                </div>
-              </form>
+                  <label className="field">
+                    <span>CUIT / RUT</span>
+                    <input
+                      type="text"
+                      name="taxId"
+                      placeholder="XX-XXXXXXXX-X"
+                      value={requestData.taxId}
+                      onChange={handleRequestChange}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Teléfono</span>
+                    <input
+                      type="tel"
+                      name="phone"
+                      placeholder="11 1234 5678"
+                      value={requestData.phone}
+                      onChange={handleRequestChange}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Email *</span>
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="correo@ejemplo.com"
+                      value={requestData.email}
+                      onChange={handleRequestChange}
+                      required
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Mensaje (opcional)</span>
+                    <textarea
+                      name="message"
+                      placeholder="Contanos brevemente qué productos necesitás o de dónde venís..."
+                      value={requestData.message}
+                      onChange={handleRequestChange}
+                      rows={3}
+                    />
+                  </label>
+
+                  {requestError ? <p className="form-error">{requestError}</p> : null}
+
+                  <div className="request-form-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setShowRequestForm(false)
+                        setRequestError('')
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                    <button type="submit" className="primary-button" disabled={isRequestSubmitting}>
+                      {isRequestSubmitting ? 'Enviando...' : 'Enviar solicitud'}
+                    </button>
+                  </div>
+                </form>
+              </>
             )}
           </div>
         </div>
