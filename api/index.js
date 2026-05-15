@@ -299,6 +299,15 @@ async function initDB() {
     ['admin@demo.com', hashedAdmin, 'admin', 'Administrador Demo']
   );
 
+  // ── Cuenta Andreacm ────────────────────────────────────────────────────────
+  const hashedAndrea = bcrypt.hashSync('andreacm2024', 10);
+  await pool.query(
+    `INSERT INTO users (email, password, role, name, rol, is_active)
+     VALUES ($1, $2, 'admin', $3, 'admin', true)
+     ON CONFLICT (email) DO NOTHING`,
+    ['andrea@andres-merino.com.ar', hashedAndrea, 'Andreacm']
+  );
+
   // ── Migración de catálogo de demo ─────────────────────────────────────────
   // Si el app_state todavía tiene productos de pinturería (categoría 'Latex'),
   // los reemplazamos por el catálogo genérico de distribuidora mayorista.
