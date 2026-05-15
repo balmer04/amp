@@ -2971,6 +2971,251 @@ function SolicitudesSection({ session, onApproved }) {
   )
 }
 
+// ─── Pedidos Section ─────────────────────────────────────────────────────────
+const PIPELINE_STAGES = [
+  { id: 'Pendiente',   label: 'Pendientes',   color: '#f59e0b', bg: '#fffbeb' },
+  { id: 'Preparando',  label: 'Preparando',   color: '#3b82f6', bg: '#eff6ff' },
+  { id: 'Despachado',  label: 'Despachados',  color: '#8b5cf6', bg: '#f5f3ff' },
+  { id: 'Entregado',   label: 'Entregados',   color: '#10b981', bg: '#f0fdf4' },
+  { id: 'Cancelado',   label: 'Cancelados',   color: '#ef4444', bg: '#fff5f5' },
+]
+
+const DATE_RANGE_OPTIONS = [
+  { id: 'hoy',    label: 'Hoy' },
+  { id: 'semana', label: 'Últimos 7 días' },
+  { id: 'mes',    label: 'Últimos 30 días' },
+  { id: 'todo',   label: 'Todos' },
+]
+
+function PedidosSection({
+  ordersWithClient, filteredOrders,
+  orderSearch, setOrderSearch,
+  orderStatusFilter, setOrderStatusFilter,
+  orderSummary,
+  approveOrder, handleCancelOrder, changeOrderStatus, handleDispatchOrder,
+  setSelectedOrderId, handleExportOrdersCsv, session,
+}) {
+  const [dateRange, setDateRange] = useState('todo')
+  const [pipelineView, setPipelineView] = useState(false)
+
+  // Count per status for pipeline tabs
+  const countByStatus = useMemo(() => {
+    const map = {}
+    ordersWithClient.forEach(o => { map[o.status] = (map[o.status] || 0) + 1 })
+    return map
+  }, [ordersWithClient])
+
+  // Date-filtered orders on top of filteredOrders
+  const dateFilteredOrders = useMemo(() => {
+    if (dateRange === 'todo') return filteredOrders
+    const now = Date.now()
+    const ms = dateRange === 'hoy' ? 24 * 60 * 60 * 1000
+      : dateRange === 'semana' ? 7 * 24 * 60 * 60 * 1000
+      : 30 * 24 * 60 * 60 * 1000
+    return filteredOrders.filter(o => new Date(o.createdAt).getTime() >= now - ms)
+  }, [filteredOrders, dateRange])
+
+  const activeStage = PIPELINE_STAGES.find(s => s.id === orderStatusFilter) || null
+
+  return (
+    <section className="admin-section">
+      {/* KPIs */}
+      <div className="admin-orders-summary-grid">
+        <MetricCard title="Pedidos del día"   value={String(orderSummary.totalToday)}            detail="Ingresados hoy"          tone="navy" />
+        <MetricCard title="Facturación del día" value={formatCurrency(orderSummary.amountToday)} detail="Monto total hoy"          tone="blue" />
+        <MetricCard title="Pendientes"         value={String(orderSummary.pending)}              detail="Esperando aprobación"    tone={orderSummary.pending > 0 ? 'red' : 'slate'} />
+        <MetricCard title="En preparación"     value={String(orderSummary.preparing)}            detail="En proceso de armado"    tone={orderSummary.preparing > 0 ? 'navy' : 'slate'} />
+      </div>
+
+      {/* Pipeline tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+        <button
+          type="button"
+          onClick={() => setOrderStatusFilter('Todos')}
+          style={{
+            padding: '0.45rem 0.9rem', borderRadius: '20px', fontSize: '0.82rem', fontWeight: 600,
+            border: orderStatusFilter === 'Todos' ? '2px solid #1A1FBE' : '1px solid #e2e8f0',
+            background: orderStatusFilter === 'Todos' ? '#1A1FBE' : '#fff',
+            color: orderStatusFilter === 'Todos' ? '#fff' : '#374151',
+            cursor: 'pointer',
+          }}
+        >
+          Todos ({ordersWithClient.length})
+        </button>
+        {PIPELINE_STAGES.map(stage => {
+          const isActive = orderStatusFilter === stage.id
+          const count = countByStatus[stage.id] || 0
+          return (
+            <button
+              key={stage.id}
+              type="button"
+              onClick={() => setOrderStatusFilter(stage.id)}
+              style={{
+                padding: '0.45rem 0.9rem', borderRadius: '20px', fontSize: '0.82rem', fontWeight: 600,
+                border: isActive ? `2px solid ${stage.color}` : '1px solid #e2e8f0',
+                background: isActive ? stage.bg : '#fff',
+                color: isActive ? stage.color : '#374151',
+                cursor: 'pointer',
+              }}
+            >
+              {stage.label} {count > 0 ? `(${count})` : '(0)'}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
+        <label className="admin-search" style={{ flex: '1 1 220px' }}>
+          <input
+            type="text"
+            value={orderSearch}
+            onChange={(e) => setOrderSearch(e.target.value)}
+            placeholder="Buscar por N° pedido o cliente..."
+          />
+        </label>
+        <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+          {DATE_RANGE_OPTIONS.map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setDateRange(opt.id)}
+              style={{
+                padding: '0.4rem 0.75rem', fontSize: '0.8rem', fontWeight: dateRange === opt.id ? 700 : 400,
+                background: dateRange === opt.id ? '#1e293b' : '#fff',
+                color: dateRange === opt.id ? '#fff' : '#64748b',
+                border: 'none', cursor: 'pointer',
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="admin-action-btn neutral" onClick={handleExportOrdersCsv}>
+          Exportar CSV
+        </button>
+      </div>
+
+      {/* Stage header when filtering */}
+      {activeStage && (
+        <div style={{ padding: '0.6rem 1rem', borderRadius: '8px', background: activeStage.bg, border: `1px solid ${activeStage.color}22`, marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontWeight: 700, color: activeStage.color }}>{activeStage.label}</span>
+          <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{dateFilteredOrders.length} pedido(s)</span>
+          {activeStage.id === 'Pendiente' && dateFilteredOrders.length > 0 && (
+            <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#92400e', background: '#fef3c7', padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+              ⚡ Requieren aprobación
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="admin-card">
+        <div className="admin-table">
+          <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '130px 1fr 110px 1fr 100px 130px 1fr', gap: '0.5rem', padding: '0.5rem 1rem' }}>
+            <span>N° Pedido</span>
+            <span>Cliente</span>
+            <span>Fecha</span>
+            <span>Productos</span>
+            <span>Total</span>
+            <span>Estado</span>
+            <span>Acciones</span>
+          </div>
+
+          {dateFilteredOrders.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+              No hay pedidos con los filtros seleccionados.
+            </div>
+          ) : dateFilteredOrders.map((order) => {
+            const hasPendingBalance = Number(order.client?.pendingBalance) > 0
+            const isAlert = hasPendingBalance && order.client?.status !== 'Activo'
+            const stage = PIPELINE_STAGES.find(s => s.id === order.status)
+            return (
+              <div
+                key={order.id}
+                className={`admin-table-row admin-order-row${isAlert ? ' alert' : ''}`}
+                style={{ display: 'grid', gridTemplateColumns: '130px 1fr 110px 1fr 100px 130px 1fr', gap: '0.5rem', padding: '0.6rem 1rem', alignItems: 'center' }}
+              >
+                {/* ID + flags */}
+                <div>
+                  <strong style={{ fontSize: '0.875rem' }}>{order.id}</strong>
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '2px', flexWrap: 'wrap' }}>
+                    {order.isNew && <span className="admin-order-flag new">NUEVO</span>}
+                    {order.needsAttention && <span className="admin-order-flag warning">⚠</span>}
+                    {hasPendingBalance && <span style={{ fontSize: '0.68rem', background: '#fde8e8', color: '#c53030', padding: '1px 5px', borderRadius: '4px' }}>Deuda</span>}
+                  </div>
+                </div>
+
+                {/* Cliente */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#1A1FBE22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: '#1A1FBE', flexShrink: 0 }}>
+                    {(order.clientName || '?')[0].toUpperCase()}
+                  </div>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{order.clientName}</span>
+                </div>
+
+                {/* Fecha */}
+                <div>
+                  <div style={{ fontSize: '0.8rem' }}>{formatDate(order.createdAt)}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{order.relativeTime}</div>
+                </div>
+
+                {/* Productos */}
+                <span style={{ fontSize: '0.8rem', color: '#374151' }}>{order.productsPreview}</span>
+
+                {/* Total */}
+                <strong style={{ fontSize: '0.9rem' }}>{formatCurrency(order.total)}</strong>
+
+                {/* Estado badge */}
+                <span style={{
+                  display: 'inline-block', padding: '0.25rem 0.6rem', borderRadius: '20px',
+                  fontSize: '0.75rem', fontWeight: 700,
+                  background: stage?.bg || '#f1f5f9',
+                  color: stage?.color || '#64748b',
+                  border: `1px solid ${stage?.color || '#e2e8f0'}44`,
+                }}>
+                  {order.status}
+                </span>
+
+                {/* Acciones */}
+                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                  <button type="button" className="admin-table-link" onClick={() => setSelectedOrderId(order.id)}>
+                    Ver
+                  </button>
+                  {order.status === 'Pendiente' && (
+                    <>
+                      <button type="button" className="admin-action-btn approve" onClick={() => approveOrder(order.id, session.name)}>
+                        Aprobar
+                      </button>
+                      <button type="button" className="admin-action-btn cancel" onClick={() => handleCancelOrder(order)}>
+                        ✕
+                      </button>
+                    </>
+                  )}
+                  {order.status === 'Aprobado' && (
+                    <button type="button" className="admin-action-btn neutral" onClick={() => changeOrderStatus(order.id, 'Preparando', session.name)}>
+                      Preparar
+                    </button>
+                  )}
+                  {order.status === 'Preparando' && (
+                    <button type="button" className="admin-action-btn neutral" onClick={() => handleDispatchOrder(order)}>
+                      Despachar
+                    </button>
+                  )}
+                  {order.status === 'Despachado' && (
+                    <button type="button" className="admin-action-btn approve" onClick={() => changeOrderStatus(order.id, 'Entregado', session.name)}>
+                      Entregado
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 // ─── Stock Section ────────────────────────────────────────────────────────────
 const PRODUCT_CATEGORIES_ALL = ['Limpieza', 'Higiene', 'Ferreteria', 'Almacen', 'Papeleria', 'General']
 
@@ -4989,15 +5234,21 @@ export function AdminDashboard() {
   }, [filteredStockProducts, stockPage, stockTotalPages])
 
   const orderSummary = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0]
     const cutoff7d = Date.now() - 7 * 24 * 60 * 60 * 1000
     const ordersLast7d = ordersWithClient.filter(
       (order) => new Date(order.createdAt).getTime() >= cutoff7d,
     )
+    const ordersToday = ordersWithClient.filter((o) => (o.createdAt || '').startsWith(today))
 
     return {
-      totalRecent: ordersLast7d.length,
-      amountRecent: ordersLast7d.reduce((sum, order) => sum + order.total, 0),
+      totalToday: ordersToday.length,
+      amountToday: ordersToday.reduce((sum, o) => sum + (Number(o.total) || 0), 0),
       pending: ordersWithClient.filter((order) => order.status === 'Pendiente').length,
+      preparing: ordersWithClient.filter((order) => order.status === 'Preparando').length,
+      dispatchedToday: ordersToday.filter((o) => o.status === 'Despachado').length,
+      totalRecent: ordersLast7d.length,
+      amountRecent: ordersLast7d.reduce((sum, order) => sum + (Number(order.total) || 0), 0),
       dispatchedRecent: ordersLast7d.filter((order) => order.status === 'Despachado').length,
     }
   }, [ordersWithClient])
@@ -6560,103 +6811,22 @@ export function AdminDashboard() {
           ) : null}
 
           {activeSection === 'pedidos' ? (
-            <section className="admin-section">
-            <div className="admin-orders-summary-grid">
-              <MetricCard title="Pedidos del dia" value={String(orderSummary.totalToday)} detail="Ingresados hoy" tone="navy" />
-              <MetricCard title="Monto del dia" value={formatCurrency(orderSummary.amountToday)} detail="Facturacion del dia" tone="blue" />
-              <MetricCard title="Pendientes" value={String(orderSummary.pending)} detail="Sin atencion definitiva" tone="red" />
-              <MetricCard title="Despachados hoy" value={String(orderSummary.dispatchedToday)} detail="Pedidos ya enviados" tone="slate" />
-            </div>
-
-            <div className="admin-section-header admin-orders-header">
-              <div className="admin-orders-filters admin-orders-filters-full">
-                <button
-                  type="button"
-                  className="admin-action-btn neutral"
-                  onClick={handleExportOrdersCsv}
-                >
-                  Exportar CSV
-                </button>
-
-                <label className="admin-search">
-                  <input
-                    type="text"
-                    value={orderSearch}
-                    onChange={(event) => setOrderSearch(event.target.value)}
-                    placeholder="Buscar por pedido o cliente..."
-                  />
-                </label>
-
-                <label className="admin-status-filter">
-                  <select
-                    value={orderStatusFilter}
-                    onChange={(event) => setOrderStatusFilter(event.target.value)}
-                  >
-                    <option value="Todos">Todos los estados</option>
-                    {ORDER_STATUS_OPTIONS.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="admin-card">
-              <div className="admin-table">
-                <div className="admin-table-row admin-table-head admin-orders-grid">
-                  <span>N° Pedido</span>
-                  <span>Cliente</span>
-                  <span>Fecha</span>
-                  <span>Productos</span>
-                  <span>Total</span>
-                  <span>Estado</span>
-                  <span>Acciones</span>
-                </div>
-
-                {filteredOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    className={
-                      order.client?.pendingBalance > 0 && order.client?.status !== 'Activo'
-                        ? 'admin-table-row admin-orders-grid admin-order-row alert'
-                        : 'admin-table-row admin-orders-grid admin-order-row'
-                    }
-                  >
-                    <div className="admin-order-id-cell">
-                      <strong>{order.id}</strong>
-                      <div className="admin-order-row-flags">
-                        {order.isNew ? <span className="admin-order-flag new">NUEVO</span> : null}
-                        {order.needsAttention ? <span className="admin-order-flag warning">⚠</span> : null}
-                      </div>
-                    </div>
-                    <span>{order.clientName}</span>
-                    <div className="admin-order-date-cell">
-                      <span>{formatDate(order.createdAt)}</span>
-                      <small>{order.relativeTime}</small>
-                    </div>
-                    <span>{order.productsPreview}</span>
-                    <strong>{formatCurrency(order.total)}</strong>
-                    <span className={`admin-status-badge ${getOrderStatusClass(order.status)}`}>
-                      {order.status}
-                    </span>
-                    <OrderActions
-                      order={order}
-                      onOpenDetail={() => setSelectedOrderId(order.id)}
-                      onApprove={() => approveOrder(order.id, session.name)}
-                      onCancel={() => handleCancelOrder(order)}
-                      onChangeStatus={(nextStatus) =>
-                        nextStatus === 'Despachado'
-                          ? handleDispatchOrder(order)
-                          : changeOrderStatus(order.id, nextStatus, session.name)
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-            </section>
+            <PedidosSection
+              ordersWithClient={ordersWithClient}
+              filteredOrders={filteredOrders}
+              orderSearch={orderSearch}
+              setOrderSearch={setOrderSearch}
+              orderStatusFilter={orderStatusFilter}
+              setOrderStatusFilter={setOrderStatusFilter}
+              orderSummary={orderSummary}
+              approveOrder={approveOrder}
+              handleCancelOrder={handleCancelOrder}
+              changeOrderStatus={changeOrderStatus}
+              handleDispatchOrder={handleDispatchOrder}
+              setSelectedOrderId={setSelectedOrderId}
+              handleExportOrdersCsv={handleExportOrdersCsv}
+              session={session}
+            />
           ) : null}
 
           {activeSection === 'stock' ? (
