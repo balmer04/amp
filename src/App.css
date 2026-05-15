@@ -2882,6 +2882,16 @@
   font-weight: 700;
 }
 
+.admin-table-row.alert {
+  background: #fff5f5;
+  border-left: 3px solid #fc8181;
+}
+
+.admin-table-row.attention {
+  background: #fffbeb;
+  border-left: 3px solid #fbbf24;
+}
+
 .admin-level-list {
   display: grid;
   gap: 0.8rem;

@@ -728,6 +728,43 @@ export function AppDataProvider({ children }) {
     })
   }
 
+  const createProduct = (productData, actorName) => {
+    updateState((current) => {
+      const nextId = current.products.reduce((max, p) => Math.max(max, Number(p.id) || 0), 0) + 1
+      const newProduct = {
+        id: nextId,
+        name: String(productData.name || '').trim(),
+        sku: String(productData.sku || '').trim().toUpperCase(),
+        price: Number(productData.price) || 0,
+        category: productData.category || 'General',
+        brand: productData.brand || '',
+        detail: productData.detail || '',
+        currentStock: Number(productData.currentStock) || 0,
+        stockMinimo: Number(productData.stockMinimo) || 5,
+        stockReservado: 0,
+      }
+      return {
+        ...current,
+        products: [...current.products, newProduct],
+        auditLog: appendAuditEntry(current.auditLog, actorName, 'creó el producto', newProduct.name),
+      }
+    })
+  }
+
+  const updateProduct = (productId, changes, actorName) => {
+    updateState((current) => {
+      const product = current.products.find((p) => p.id === productId)
+      if (!product) return current
+      return {
+        ...current,
+        products: current.products.map((p) =>
+          p.id === productId ? { ...p, ...changes } : p
+        ),
+        auditLog: appendAuditEntry(current.auditLog, actorName, 'editó el producto', product.name),
+      }
+    })
+  }
+
   const importProducts = (importedProducts, options, actorName) => {
     updateState((current) => {
       const normalizedImported = Array.isArray(importedProducts) ? importedProducts : []
@@ -1373,6 +1410,8 @@ export function AppDataProvider({ children }) {
       updateProductStockMinimo,
       adjustProductStock,
       deleteProduct,
+      createProduct,
+      updateProduct,
       importProducts,
       updateTierThreshold,
       updateTierBenefits,

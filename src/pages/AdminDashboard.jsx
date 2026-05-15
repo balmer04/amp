@@ -2971,6 +2971,381 @@ function SolicitudesSection({ session, onApproved }) {
   )
 }
 
+// ─── Stock Section ────────────────────────────────────────────────────────────
+const PRODUCT_CATEGORIES_ALL = ['Limpieza', 'Higiene', 'Ferreteria', 'Almacen', 'Papeleria', 'General']
+
+function ProductFormModal({ title, initial, onSave, onClose }) {
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    sku: initial?.sku || '',
+    price: initial?.price ?? '',
+    category: initial?.category || 'General',
+    brand: initial?.brand || '',
+    detail: initial?.detail || '',
+    currentStock: initial?.currentStock ?? '',
+    stockMinimo: initial?.stockMinimo ?? 5,
+  })
+  const [error, setError] = useState('')
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!form.name.trim()) { setError('El nombre es obligatorio.'); return }
+    if (!form.sku.trim()) { setError('El SKU es obligatorio.'); return }
+    onSave(form)
+  }
+
+  return (
+    <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="admin-modal-card" role="dialog" aria-modal="true" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+        <div className="admin-modal-header">
+          <div>
+            <span className="admin-card-eyebrow">Catálogo</span>
+            <h3>{title}</h3>
+          </div>
+          <button type="button" className="admin-modal-close" onClick={onClose}>Cerrar</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="admin-modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.9rem' }}>
+            <label className="admin-field-label" style={{ gridColumn: '1 / -1' }}>
+              Nombre del producto *
+              <input className="admin-input" value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Ej: Lavandina Concentrada 5L" />
+            </label>
+            <label className="admin-field-label">
+              SKU *
+              <input className="admin-input" value={form.sku} onChange={(e) => setForm(p => ({ ...p, sku: e.target.value.toUpperCase() }))} placeholder="Ej: LMP-LAV-5L" />
+            </label>
+            <label className="admin-field-label">
+              Categoría
+              <select className="admin-input" value={form.category} onChange={(e) => setForm(p => ({ ...p, category: e.target.value }))}>
+                {PRODUCT_CATEGORIES_ALL.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="admin-field-label">
+              Precio ($)
+              <input type="number" min="0" step="0.01" className="admin-input" value={form.price} onChange={(e) => setForm(p => ({ ...p, price: e.target.value }))} placeholder="0.00" />
+            </label>
+            <label className="admin-field-label">
+              Marca
+              <input className="admin-input" value={form.brand} onChange={(e) => setForm(p => ({ ...p, brand: e.target.value }))} placeholder="Ej: Procenex" />
+            </label>
+            <label className="admin-field-label">
+              Stock inicial
+              <input type="number" min="0" className="admin-input" value={form.currentStock} onChange={(e) => setForm(p => ({ ...p, currentStock: e.target.value }))} placeholder="0" />
+            </label>
+            <label className="admin-field-label">
+              Stock mínimo
+              <input type="number" min="0" className="admin-input" value={form.stockMinimo} onChange={(e) => setForm(p => ({ ...p, stockMinimo: e.target.value }))} placeholder="5" />
+            </label>
+            <label className="admin-field-label" style={{ gridColumn: '1 / -1' }}>
+              Descripción / Detalle
+              <input className="admin-input" value={form.detail} onChange={(e) => setForm(p => ({ ...p, detail: e.target.value }))} placeholder="Unidad de medida, presentación, etc." />
+            </label>
+            {error && <p style={{ color: '#e53e3e', fontSize: '0.85rem', gridColumn: '1 / -1' }}>{error}</p>}
+          </div>
+          <div className="admin-modal-footer">
+            <button type="button" className="admin-action-btn neutral" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="admin-primary-btn">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function StockSection({
+  products, filteredStockProducts, visibleStockProducts,
+  stockPage, setStockPage, stockTotalPages,
+  stockSearch, setStockSearch, stockOnlyAlerts, setStockOnlyAlerts,
+  setStockAdjustProduct, productIdsInOrders,
+  updateProductStock, updateProductStockMinimo,
+  deleteProduct, createProduct, updateProduct,
+  handleDeleteProduct, setIsProductImportOpen, session,
+}) {
+  const [selected, setSelected] = useState(new Set())
+  const [categoryFilter, setCategoryFilter] = useState('todos')
+  const [sortBy, setSortBy] = useState('name') // name | stock | status | price
+  const [editingProduct, setEditingProduct] = useState(null) // product to edit
+  const [showNewForm, setShowNewForm] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  // Apply category filter + sort on top of filteredStockProducts
+  const displayProducts = useMemo(() => {
+    let list = filteredStockProducts
+    if (stockOnlyAlerts) {
+      list = list.filter(p => {
+        const min = Number(p.stockMinimo) || 5
+        const res = Number(p.stockReservado) || 0
+        return Math.max((Number(p.currentStock) || 0) - res, 0) < min
+      })
+    }
+    if (categoryFilter !== 'todos') {
+      list = list.filter(p => p.category === categoryFilter)
+    }
+    return [...list].sort((a, b) => {
+      if (sortBy === 'stock') return (Number(a.currentStock) || 0) - (Number(b.currentStock) || 0)
+      if (sortBy === 'status') {
+        const statusScore = (p) => {
+          const min = Number(p.stockMinimo) || 5
+          const avail = Math.max((Number(p.currentStock) || 0) - (Number(p.stockReservado) || 0), 0)
+          if (avail < Math.ceil(min / 2)) return 0
+          if (avail < min) return 1
+          return 2
+        }
+        return statusScore(a) - statusScore(b)
+      }
+      if (sortBy === 'price') return (Number(a.price) || 0) - (Number(b.price) || 0)
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''), 'es')
+    })
+  }, [filteredStockProducts, stockOnlyAlerts, categoryFilter, sortBy])
+
+  // Paginate the display list independently
+  const PAGE_SIZE = 25
+  const totalPages = Math.max(Math.ceil(displayProducts.length / PAGE_SIZE), 1)
+  const safePage = Math.min(stockPage, totalPages)
+  const pageProducts = displayProducts.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  // KPIs
+  const kpis = useMemo(() => {
+    const total = products.length
+    const low = products.filter(p => {
+      const min = Number(p.stockMinimo) || 5
+      const avail = Math.max((Number(p.currentStock) || 0) - (Number(p.stockReservado) || 0), 0)
+      return avail < min
+    }).length
+    const critical = products.filter(p => {
+      const min = Number(p.stockMinimo) || 5
+      const avail = Math.max((Number(p.currentStock) || 0) - (Number(p.stockReservado) || 0), 0)
+      return avail < Math.ceil(min / 2)
+    }).length
+    const value = products.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.currentStock) || 0), 0)
+    return { total, low, critical, value }
+  }, [products])
+
+  const allPageIds = pageProducts.map(p => p.id)
+  const allSelected = allPageIds.length > 0 && allPageIds.every(id => selected.has(id))
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelected(prev => { const s = new Set(prev); allPageIds.forEach(id => s.delete(id)); return s })
+    } else {
+      setSelected(prev => { const s = new Set(prev); allPageIds.forEach(id => s.add(id)); return s })
+    }
+  }
+
+  const toggleOne = (id) => {
+    setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
+
+  const handleBulkDelete = () => {
+    const deletable = [...selected].filter(id => !productIdsInOrders.has(id))
+    const blocked = selected.size - deletable.length
+    if (deletable.length === 0) {
+      alert('Los productos seleccionados no se pueden eliminar porque tienen pedidos asociados.')
+      return
+    }
+    const msg = blocked > 0
+      ? `¿Eliminar ${deletable.length} producto(s)? ${blocked} producto(s) no se pueden eliminar porque tienen pedidos.`
+      : `¿Eliminar ${deletable.length} producto(s) seleccionados?`
+    if (!window.confirm(msg)) return
+    setBulkDeleting(true)
+    deletable.forEach(id => deleteProduct(id, session.name))
+    setSelected(new Set())
+    setBulkDeleting(false)
+  }
+
+  const handleSaveNew = (form) => {
+    createProduct({
+      name: form.name,
+      sku: form.sku,
+      price: Number(form.price) || 0,
+      category: form.category,
+      brand: form.brand,
+      detail: form.detail,
+      currentStock: Number(form.currentStock) || 0,
+      stockMinimo: Number(form.stockMinimo) || 5,
+    }, session.name)
+    setShowNewForm(false)
+  }
+
+  const handleSaveEdit = (form) => {
+    updateProduct(editingProduct.id, {
+      name: form.name,
+      sku: form.sku,
+      price: Number(form.price) || 0,
+      category: form.category,
+      brand: form.brand,
+      detail: form.detail,
+      stockMinimo: Number(form.stockMinimo) || 5,
+    }, session.name)
+    setEditingProduct(null)
+  }
+
+  return (
+    <section className="admin-section">
+      {/* KPIs */}
+      <div className="admin-metrics-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        <MetricCard title="Total productos" value={String(kpis.total)} detail="en catálogo" tone="slate" />
+        <MetricCard title="Stock bajo" value={String(kpis.low)} detail="debajo del mínimo" tone={kpis.low > 0 ? 'navy' : 'slate'} />
+        <MetricCard title="Críticos" value={String(kpis.critical)} detail="menos de 50% del mínimo" tone={kpis.critical > 0 ? 'red' : 'slate'} />
+        <MetricCard title="Valor en stock" value={formatCurrency(kpis.value)} detail="precio × unidades" tone="slate" />
+      </div>
+
+      <div className="admin-card admin-stock-card">
+        {/* Toolbar */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '1rem', alignItems: 'center' }}>
+          <label className="admin-search" style={{ flex: '1 1 220px' }}>
+            <input
+              type="text"
+              value={stockSearch}
+              onChange={(e) => { setStockSearch(e.target.value); setStockPage(1) }}
+              placeholder="Buscar por producto, SKU o marca..."
+            />
+          </label>
+          <select className="admin-select" value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setStockPage(1) }}>
+            <option value="todos">Todas las categorías</option>
+            {PRODUCT_CATEGORIES_ALL.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select className="admin-select" value={stockOnlyAlerts ? 'alertas' : 'todos'} onChange={(e) => { setStockOnlyAlerts(e.target.value === 'alertas'); setStockPage(1) }}>
+            <option value="todos">Todos los estados</option>
+            <option value="alertas">Solo alertas</option>
+          </select>
+          <select className="admin-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="name">Ordenar: Nombre</option>
+            <option value="stock">Ordenar: Stock ↑</option>
+            <option value="status">Ordenar: Estado</option>
+            <option value="price">Ordenar: Precio</option>
+          </select>
+          <button type="button" className="admin-primary-btn" onClick={() => setShowNewForm(true)}>+ Nuevo producto</button>
+          <button type="button" className="admin-action-btn neutral" onClick={() => setIsProductImportOpen(true)}>Importar</button>
+        </div>
+
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.6rem 0.75rem', background: '#eff6ff', borderRadius: '8px', marginBottom: '0.75rem', border: '1px solid #bfdbfe' }}>
+            <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{selected.size} producto(s) seleccionado(s)</span>
+            <button type="button" className="admin-action-btn danger" onClick={handleBulkDelete} disabled={bulkDeleting}>
+              Eliminar seleccionados
+            </button>
+            <button type="button" className="admin-action-btn neutral" onClick={() => setSelected(new Set())}>
+              Cancelar selección
+            </button>
+          </div>
+        )}
+
+        {/* Alert banner */}
+        {kpis.critical > 0 && (
+          <div className="admin-alert-row rich warning" style={{ marginBottom: '0.75rem' }}>
+            <span className="admin-alert-icon">⚠️</span>
+            <strong>{kpis.critical} producto(s) en nivel crítico · {kpis.low - kpis.critical} más con stock bajo</strong>
+          </div>
+        )}
+
+        <div className="admin-stock-meta">
+          <span>Mostrando {pageProducts.length} de {displayProducts.length} productos</span>
+          <span>Pág. {safePage} de {totalPages}</span>
+        </div>
+
+        {/* Table */}
+        <div className="admin-table admin-stock-table-scroll">
+          <div className="admin-table-row admin-table-head" style={{ display: 'grid', gridTemplateColumns: '32px 2fr 80px 80px 90px 80px 80px 80px 1fr', gap: '0.5rem', padding: '0.5rem 0.75rem', alignItems: 'center' }}>
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor: 'pointer' }} />
+            <span>Producto / SKU</span>
+            <span>Categoría</span>
+            <span>Precio</span>
+            <span>Actual</span>
+            <span>Reservado</span>
+            <span>Disponible</span>
+            <span>Mínimo</span>
+            <span>Acciones</span>
+          </div>
+
+          {pageProducts.map((product) => {
+            const stockMinimo = Number(product.stockMinimo) || 5
+            const stockReservado = Number(product.stockReservado) || 0
+            const stockDisponible = Math.max((Number(product.currentStock) || 0) - stockReservado, 0)
+            const isLow = stockDisponible < stockMinimo
+            const isCritical = stockDisponible < Math.ceil(stockMinimo / 2)
+            const isChecked = selected.has(product.id)
+            return (
+              <div key={product.id} className={`admin-table-row${isCritical ? ' alert' : isLow ? ' attention' : ''}`}
+                style={{ display: 'grid', gridTemplateColumns: '32px 2fr 80px 80px 90px 80px 80px 80px 1fr', gap: '0.5rem', padding: '0.5rem 0.75rem', alignItems: 'center', background: isChecked ? '#eff6ff' : undefined }}>
+                <input type="checkbox" checked={isChecked} onChange={() => toggleOne(product.id)} style={{ cursor: 'pointer' }} />
+                <div>
+                  <strong>{product.name}</strong>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{product.sku}{product.brand ? ` · ${product.brand}` : ''}</div>
+                </div>
+                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>{product.category || '—'}</span>
+                <span style={{ fontSize: '0.875rem' }}>{formatCurrency(product.price || 0)}</span>
+                <EditableNumberField
+                  value={product.currentStock}
+                  onCommit={(v) => updateProductStock(product.id, v, session.name)}
+                  suffix="uni"
+                />
+                <span style={{ color: '#64748b', fontSize: '0.875rem' }}>{stockReservado}</span>
+                <strong style={{ color: isCritical ? '#e53e3e' : isLow ? '#d97706' : '#16a34a', fontSize: '0.875rem' }}>
+                  {stockDisponible}
+                </strong>
+                <EditableNumberField
+                  value={stockMinimo}
+                  onCommit={(v) => updateProductStockMinimo(product.id, v, session.name)}
+                  suffix="uni"
+                />
+                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                  <button type="button" className="admin-action-btn neutral" onClick={() => setStockAdjustProduct(product)} title="Registrar movimiento">
+                    Ajustar
+                  </button>
+                  <button type="button" className="admin-action-btn neutral" onClick={() => setEditingProduct(product)} title="Editar producto">
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-action-btn cancel"
+                    onClick={() => handleDeleteProduct(product)}
+                    disabled={productIdsInOrders.has(product.id)}
+                    title={productIdsInOrders.has(product.id) ? 'Tiene pedidos asociados' : 'Eliminar'}
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+
+          {pageProducts.length === 0 && (
+            <div className="admin-stock-empty">No hay productos con esa búsqueda o filtro.</div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="admin-stock-pagination">
+            <button type="button" className="admin-action-btn neutral" disabled={safePage <= 1} onClick={() => setStockPage(p => Math.max(p - 1, 1))}>Anterior</button>
+            <span>Pág. {safePage} de {totalPages}</span>
+            <button type="button" className="admin-action-btn neutral" disabled={safePage >= totalPages} onClick={() => setStockPage(p => Math.min(p + 1, totalPages))}>Siguiente</button>
+          </div>
+        )}
+      </div>
+
+      {showNewForm && (
+        <ProductFormModal
+          title="Nuevo producto"
+          initial={null}
+          onSave={handleSaveNew}
+          onClose={() => setShowNewForm(false)}
+        />
+      )}
+      {editingProduct && (
+        <ProductFormModal
+          title={`Editar — ${editingProduct.name}`}
+          initial={editingProduct}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingProduct(null)}
+        />
+      )}
+    </section>
+  )
+}
+
 // ─── Cobranzas: vista dedicada de cuentas por cobrar con aging buckets ─────
 function CobranzasSection({ clients, orders, onOpenClient }) {
   const { session } = useAuth()
@@ -4336,6 +4711,8 @@ export function AdminDashboard() {
     updateProductStockMinimo,
     adjustProductStock,
     deleteProduct,
+    createProduct,
+    updateProduct,
     importProducts,
     updateTierThreshold,
     updateTierBenefits,
@@ -6283,6 +6660,32 @@ export function AdminDashboard() {
           ) : null}
 
           {activeSection === 'stock' ? (
+            <StockSection
+              products={products}
+              filteredStockProducts={filteredStockProducts}
+              visibleStockProducts={visibleStockProducts}
+              stockPage={stockPage}
+              setStockPage={setStockPage}
+              stockTotalPages={stockTotalPages}
+              stockSearch={stockSearch}
+              setStockSearch={setStockSearch}
+              stockOnlyAlerts={stockOnlyAlerts}
+              setStockOnlyAlerts={setStockOnlyAlerts}
+              stockAdjustProduct={stockAdjustProduct}
+              setStockAdjustProduct={setStockAdjustProduct}
+              productIdsInOrders={productIdsInOrders}
+              updateProductStock={updateProductStock}
+              updateProductStockMinimo={updateProductStockMinimo}
+              deleteProduct={deleteProduct}
+              createProduct={createProduct}
+              updateProduct={updateProduct}
+              handleDeleteProduct={handleDeleteProduct}
+              setIsProductImportOpen={setIsProductImportOpen}
+              session={session}
+            />
+          ) : null}
+
+          {activeSection === 'stock__disabled' ? (
             <section className="admin-section">
             <div className="admin-section-header">
               <div className="admin-stock-toolbar">
@@ -6452,6 +6855,7 @@ export function AdminDashboard() {
             </div>
             </section>
           ) : null}
+          {/* end stock__disabled */}
 
           {activeSection === 'facturacion' ? (
             <section className="admin-section">
