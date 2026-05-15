@@ -2682,7 +2682,10 @@ function BeneficiosPage({ loyaltyStatus, tierBenefitSummary, client }) {
     } catch { /* noop */ }
   }, [tierName])
 
-  const categoryDiscounts = tierBenefitSummary?.categoryDiscounts || {}
+  // categoryDiscounts is an array of { category, percent }
+  const categoryDiscounts = Array.isArray(tierBenefitSummary?.categoryDiscounts)
+    ? tierBenefitSummary.categoryDiscounts
+    : []
   const shippingMode = tierBenefitSummary?.shippingMode || 'none'
 
   if (!loyaltyStatus?.currentTier) {
@@ -2728,10 +2731,10 @@ function BeneficiosPage({ loyaltyStatus, tierBenefitSummary, client }) {
         </div>
 
         <div className="beneficios-grid">
-          {Object.entries(categoryDiscounts).map(([cat, pct]) => (
-            <div key={cat} className={`beneficios-card ${pct > 0 ? 'active' : ''}`}>
-              <strong>{pct}%</strong>
-              <small>{cat}</small>
+          {categoryDiscounts.map(({ category, percent }) => (
+            <div key={category} className={`beneficios-card ${percent > 0 ? 'active' : ''}`}>
+              <strong>{percent}%</strong>
+              <small>{category}</small>
             </div>
           ))}
           <div className={`beneficios-card ${shippingMode !== 'none' ? 'active' : ''}`}>
