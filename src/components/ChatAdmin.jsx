@@ -118,7 +118,7 @@ export default function ChatAdmin() {
   })
 
   const [input, setInput] = useState('')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const bottomRef = useRef(null)
   const textareaRef = useRef(null)
   const recentConversations = useMemo(() => conversations.slice(0, 12), [conversations])
@@ -213,27 +213,30 @@ export default function ChatAdmin() {
             </div>
           </div>
           <div className="aic-header-actions">
-            {!sidebarOpen && (
-              <button
-                type="button"
-                className="aic-hdr-btn"
-                onClick={() => setSidebarOpen(true)}
-                title="Mostrar historial"
-              >
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path d="M3 5h14M3 10h14M3 15h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                </svg>
-              </button>
-            )}
             <button
               type="button"
-              className="aic-hdr-btn"
+              className="aic-hdr-btn-wide"
+              onClick={() => setSidebarOpen((v) => !v)}
+              title={sidebarOpen ? 'Ocultar historial' : 'Mostrar historial'}
+            >
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M4 5.5h12M4 9h12M4 12.5h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              Historial
+              {recentConversations.length > 0 && (
+                <span className="aic-hdr-badge">{recentConversations.length}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="aic-hdr-btn-wide primary"
               onClick={clearChat}
               title="Nueva conversación"
             >
               <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
               </svg>
+              Nueva
             </button>
           </div>
         </div>
