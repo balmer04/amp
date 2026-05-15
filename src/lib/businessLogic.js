@@ -903,8 +903,47 @@ export function formatCurrency(value) {
   }).format(value)
 }
 
+// ─── Timezone helpers — Argentina (UTC-3, sin horario de verano) ─────────────
+const AR_TZ = 'America/Argentina/Buenos_Aires'
+
+/**
+ * Devuelve 'YYYY-MM-DD' del día actual en Argentina.
+ */
+export function arToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: AR_TZ }).format(new Date())
+}
+
+/**
+ * Devuelve 'YYYY-MM-DD' de una fecha ISO/timestamp interpretada en hora Argentina.
+ */
+export function arDateOf(dateInput) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: AR_TZ }).format(d)
+}
+
+/**
+ * Devuelve el timestamp (ms) de la medianoche Argentina del día actual
+ * menos `daysAgo` días. Útil para filtros de rango.
+ * Argentina = UTC-3 fijo → medianoche AR = 03:00 UTC.
+ */
+export function arStartOfDay(daysAgo = 0) {
+  const [y, m, d] = arToday().split('-').map(Number)
+  // Medianoche de (hoy - daysAgo) en Argentina = 03:00 UTC de ese mismo día
+  return Date.UTC(y, m - 1, d - daysAgo, 3, 0, 0, 0)
+}
+
+/**
+ * Devuelve 'YYYY-MM-DD' de hoy en Argentina (alias para usar en inputs date).
+ */
+export function arTodayInput() {
+  return arToday()
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function formatDate(dateString) {
+  if (!dateString) return '—'
   return new Intl.DateTimeFormat('es-AR', {
+    timeZone: AR_TZ,
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -912,7 +951,9 @@ export function formatDate(dateString) {
 }
 
 export function formatDateTime(dateString) {
+  if (!dateString) return '—'
   return new Intl.DateTimeFormat('es-AR', {
+    timeZone: AR_TZ,
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

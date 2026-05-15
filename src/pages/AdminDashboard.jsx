@@ -16,6 +16,9 @@ import {
   getTierBenefitConfig,
   getLoyaltyStatus,
   getTierByPoints,
+  arToday,
+  arDateOf,
+  arStartOfDay,
 } from '../lib/businessLogic'
 
 const adminSections = [
@@ -3413,14 +3416,15 @@ function PedidosSection({
     return map
   }, [ordersWithClient])
 
-  // Date-filtered orders on top of filteredOrders
+  // Date-filtered orders — cortes desde medianoche Argentina (UTC-3)
   const dateFilteredOrders = useMemo(() => {
     if (dateRange === 'todo') return filteredOrders
-    const now = Date.now()
-    const ms = dateRange === 'hoy' ? 24 * 60 * 60 * 1000
-      : dateRange === 'semana' ? 7 * 24 * 60 * 60 * 1000
-      : 30 * 24 * 60 * 60 * 1000
-    return filteredOrders.filter(o => new Date(o.createdAt).getTime() >= now - ms)
+    const todayAR = arToday()
+    if (dateRange === 'hoy') {
+      return filteredOrders.filter(o => o.createdAt && arDateOf(o.createdAt) === todayAR)
+    }
+    const cutoff = arStartOfDay(dateRange === 'semana' ? 7 : 30)
+    return filteredOrders.filter(o => o.createdAt && new Date(o.createdAt).getTime() >= cutoff)
   }, [filteredOrders, dateRange])
 
   const activeStage = PIPELINE_STAGES.find(s => s.id === orderStatusFilter) || null
@@ -4448,7 +4452,7 @@ function PromocionesSection() {
     valor: '',
     alcance: 'todos',
     tier: 'Asociado',
-    inicio: new Date().toISOString().slice(0, 10),
+    inicio: arToday(),
     fin: '',
     activa: true,
   })
@@ -4473,7 +4477,7 @@ function PromocionesSection() {
     setShowForm(false)
     setForm({
       nombre: '', tipo: 'percent', valor: '', alcance: 'todos',
-      tier: 'Asociado', inicio: new Date().toISOString().slice(0, 10), fin: '', activa: true,
+      tier: 'Asociado', inicio: arToday(), fin: '', activa: true,
     })
   }
 
@@ -4829,7 +4833,7 @@ function CotizacionesSection({ clients, products }) {
   const [form, setForm] = useState({
     client_json_id: '',
     vencimiento: (() => {
-      const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10)
+      const [y,mo,dy] = arToday().split('-').map(Number); return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires'}).format(new Date(Date.UTC(y,mo-1,dy+15,3,0,0,0)))
     })(),
     items: [{ productId: '', qty: 1, unitPrice: 0 }],
     descuento: 0,
@@ -4856,7 +4860,7 @@ function CotizacionesSection({ clients, products }) {
     setForm({
       client_json_id: '',
       vencimiento: (() => {
-        const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10)
+        const [y,mo,dy] = arToday().split('-').map(Number); return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires'}).format(new Date(Date.UTC(y,mo-1,dy+15,3,0,0,0)))
       })(),
       items: [{ productId: '', qty: 1, unitPrice: 0 }],
       descuento: 0,
@@ -5059,7 +5063,7 @@ function CotizacionesSection({ clients, products }) {
     })
     setForm({
       client_json_id: String(solicitud.client_json_id),
-      vencimiento: (() => { const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().slice(0, 10) })(),
+      vencimiento: (() => { const [y,mo,dy] = arToday().split('-').map(Number); return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires'}).format(new Date(Date.UTC(y,mo-1,dy+15,3,0,0,0))) })(),
       items: itemsConPrecio.length ? itemsConPrecio : [{ productId: '', qty: 1, unitPrice: 0 }],
       descuento: 0,
       notas: solicitud.notas || '',
@@ -5642,12 +5646,16 @@ export function AdminDashboard() {
   }, [filteredStockProducts, stockPage, stockTotalPages])
 
   const orderSummary = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0]
-    const cutoff7d = Date.now() - 7 * 24 * 60 * 60 * 1000
+    // Usamos hora Argentina (UTC-3) para todos los cortes de "hoy" y "últimos 7 días"
+    const todayAR = arToday()
+    const start7d  = arStartOfDay(7)
+    const start30d = arStartOfDay(30)
     const ordersLast7d = ordersWithClient.filter(
-      (order) => new Date(order.createdAt).getTime() >= cutoff7d,
+      (order) => order.createdAt && new Date(order.createdAt).getTime() >= start7d,
     )
-    const ordersToday = ordersWithClient.filter((o) => (o.createdAt || '').startsWith(today))
+    const ordersToday = ordersWithClient.filter(
+      (o) => o.createdAt && arDateOf(o.createdAt) === todayAR,
+    )
 
     return {
       totalToday: ordersToday.length,
@@ -5711,14 +5719,17 @@ export function AdminDashboard() {
   }, [clients, clientsWithTier, orderSummary.dispatchedRecent, orders])
 
   const salesLast7Days = useMemo(() => {
-    const today = new Date()
+    // Genera los 7 días usando hora Argentina para que "hoy" sea correcto
+    const todayAR = arToday() // 'YYYY-MM-DD'
+    const [y, m, d] = todayAR.split('-').map(Number)
     const days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(today)
-      date.setHours(0, 0, 0, 0)
-      date.setDate(today.getDate() - (6 - index))
+      // Fecha del día (6-index) días atrás en Argentina
+      const date = new Date(Date.UTC(y, m - 1, d - (6 - index), 3, 0, 0, 0))
+      const key = arDateOf(date) // 'YYYY-MM-DD' en Argentina
       return {
-        key: date.toISOString().slice(0, 10),
+        key,
         label: new Intl.DateTimeFormat('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
           day: '2-digit',
           month: '2-digit',
         }).format(date),
@@ -5729,9 +5740,9 @@ export function AdminDashboard() {
     orders
       .filter((order) => ['Aprobado', 'Despachado'].includes(order.status))
       .forEach((order) => {
-        const key = new Date(order.createdAt).toISOString().slice(0, 10)
+        if (!order.createdAt) return
+        const key = arDateOf(order.createdAt) // fecha en hora Argentina
         const targetDay = days.find((day) => day.key === key)
-
         if (targetDay) {
           targetDay.value += order.total
         }

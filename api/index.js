@@ -5,6 +5,24 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { SYSTEM_PROMPT_ADMIN, SYSTEM_PROMPT_CLIENTE } from '../shared/aiPrompts.js';
 
+// ─── Timezone helpers Argentina (UTC-3 fijo, sin DST) ─────────────────────────
+const AR_TZ = 'America/Argentina/Buenos_Aires';
+/** 'YYYY-MM-DD' de hoy en Argentina */
+function arToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: AR_TZ }).format(new Date());
+}
+/** 'YYYY-MM-DD' de cualquier fecha en hora Argentina */
+function arDateOf(dateInput) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: AR_TZ }).format(d);
+}
+/** Timestamp (ms) de la medianoche Argentina hace `daysAgo` días */
+function arStartOfDay(daysAgo = 0) {
+  const [y, m, d] = arToday().split('-').map(Number);
+  return Date.UTC(y, m - 1, d - daysAgo, 3, 0, 0, 0); // medianoche AR = 03:00 UTC
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Evita que Node.js rechace el certificado de Supabase
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -1265,9 +1283,11 @@ const CLIENT_TOOLS = [
 ];
 
 function getMonthWindow(monthsAgo = 0) {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
-  const end = new Date(now.getFullYear(), now.getMonth() - monthsAgo + 1, 1);
+  // Usa el mes actual en hora Argentina para que el corte sea correcto
+  const [y, m] = arToday().split('-').map(Number);
+  // Primer día del mes objetivo a medianoche Argentina (= 03:00 UTC)
+  const start = new Date(Date.UTC(y, m - 1 - monthsAgo, 1, 3, 0, 0, 0));
+  const end   = new Date(Date.UTC(y, m - 1 - monthsAgo + 1, 1, 3, 0, 0, 0));
   return { start, end };
 }
 
@@ -1373,7 +1393,7 @@ const executeTool = async (functionName, args, pool) => {
       `- Disponible: $${Math.max(creditLimit - pendingBalance, 0).toLocaleString('es-AR')}`,
       `- Pedidos totales: ${clientOrders.length}`,
       `- Facturacion historica: $${Math.round(totalSpent).toLocaleString('es-AR')}`,
-      `- Ultima compra: ${lastOrder?.createdAt ? new Date(lastOrder.createdAt).toLocaleDateString('es-AR') : 'Sin compras'}`,
+      `- Ultima compra: ${lastOrder?.createdAt ? new Intl.DateTimeFormat('es-AR',{timeZone:AR_TZ}).format(new Date(lastOrder.createdAt)) : 'Sin compras'}`,
       `- Ultimo pedido: ${lastOrder ? `#${lastOrder.id} | $${(lastOrder.total || 0).toLocaleString('es-AR')} | estado: ${lastOrder.status}` : 'N/D'}`,
     ].join('\n');
   }
@@ -1387,7 +1407,7 @@ const executeTool = async (functionName, args, pool) => {
     if (pending.length === 0) return 'No hay pedidos pendientes en este momento.';
     const lines = pending.map(o => {
       const client = state.clients.find(c => c.id === o.clientId);
-      return `- Pedido ${o.id} | ${client?.businessName || 'Cliente desconocido'} | $${(o.total || 0).toLocaleString('es-AR')} | estado: ${o.status} | fecha: ${o.createdAt ? new Date(o.createdAt).toLocaleDateString('es-AR') : 'N/D'}`;
+      return `- Pedido ${o.id} | ${client?.businessName || 'Cliente desconocido'} | $${(o.total || 0).toLocaleString('es-AR')} | estado: ${o.status} | fecha: ${o.createdAt ? new Intl.DateTimeFormat('es-AR',{timeZone:AR_TZ}).format(new Date(o.createdAt)) : 'N/D'}`;
     });
     return [`PEDIDOS PENDIENTES (${pending.length}):`, ...lines].join('\n');
   }
@@ -1501,7 +1521,7 @@ const executeTool = async (functionName, args, pool) => {
     return `CLIENTES INACTIVOS (>${requestedDays} dias):\n` + inactive.map((client) => {
       const clientOrders = state.orders.filter((order) => order.clientId === client.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       const lastOrder = clientOrders[0] ?? null;
-      const lastPurchaseLabel = lastOrder?.createdAt ? new Date(lastOrder.createdAt).toLocaleDateString('es-AR') : 'Sin compras';
+      const lastPurchaseLabel = lastOrder?.createdAt ? new Intl.DateTimeFormat('es-AR',{timeZone:AR_TZ}).format(new Date(lastOrder.createdAt)) : 'Sin compras';
       return `- ${client.businessName} | saldo pendiente: $${Number(client.pendingBalance ?? 0)} | ultima compra: ${lastPurchaseLabel} | pedidos: ${clientOrders.length}`;
     }).join('\n');
   }
@@ -1637,7 +1657,7 @@ const executeTool = async (functionName, args, pool) => {
           monthsAnalyzed: months,
           projectedDemand,
           suggestedPurchase,
-          recommendedDate: recommendedDate.toLocaleDateString('es-AR'),
+          recommendedDate: new Intl.DateTimeFormat('es-AR',{timeZone:AR_TZ}).format(recommendedDate),
         };
       })
       .filter((entry) => entry.projectedDemand > 0)
@@ -1665,10 +1685,10 @@ const executeTool = async (functionName, args, pool) => {
     ].join('\n');
   }
   if (functionName === 'get_today_sales_summary') {
-    const today = new Date().toISOString().split('T')[0];
-    const todaysOrders = state.orders.filter(o => (o.createdAt || '').startsWith(today));
+    const todayAR = arToday();
+    const todaysOrders = state.orders.filter(o => o.createdAt && arDateOf(o.createdAt) === todayAR);
     const totalAmount = todaysOrders.reduce((acc, o) => acc + (o.total ?? 0), 0);
-    return `RESUMEN DE HOY: ${todaysOrders.length} pedidos. Facturacion: $${totalAmount}.`;
+    return `RESUMEN DE HOY (${todayAR}, hora Argentina): ${todaysOrders.length} pedidos. Facturacion: $${totalAmount}.`;
   }
   if (functionName === 'get_inventory_replenishment_suggestions') {
     const suggestions = state.products.filter(p => (p.currentStock ?? 0) < 20).slice(0, 5);
@@ -1736,10 +1756,10 @@ async function runSeparatedAiChat(req, res, { requiredRole, systemPrompt, tools 
     let dataContextBlock = '';
 
     if (requiredRole === 'admin') {
-      const today = new Date().toISOString().split('T')[0];
+      const today = arToday(); // 'YYYY-MM-DD' en hora Argentina
       const pendingOrders = orders.filter(o => o.status === 'Pendiente');
       const preparingOrders = orders.filter(o => o.status === 'Preparando');
-      const todayOrders = orders.filter(o => (o.createdAt || '').startsWith(today));
+      const todayOrders = orders.filter(o => o.createdAt && arDateOf(o.createdAt) === today);
       const todayRevenue = todayOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
       const lowStockProducts = products.filter(p => (p.currentStock ?? 0) <= (p.minStock ?? 5));
       const clientsWithDebt = clients.filter(c => (Number(c.pendingBalance) || 0) > 0);
@@ -2201,7 +2221,7 @@ app.post('/api/client/cotizaciones', authenticateToken, async (req, res) => {
     );
     const numero = `SOL-${String(Number(numRows[0].count) + 1).padStart(4, '0')}`;
 
-    const vencimiento = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const vencimiento = new Intl.DateTimeFormat('en-CA', { timeZone: AR_TZ }).format(new Date(arStartOfDay(-15)));
     const { rows } = await pool.query(
       `INSERT INTO cotizaciones (numero, client_json_id, vencimiento, estado, items, notas, origen, datos_cliente, creado_por)
        VALUES ($1, $2, $3, 'solicitada', $4, $5, 'cliente', $6, $7) RETURNING *`,
