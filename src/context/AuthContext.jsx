@@ -4,14 +4,25 @@ import { getDemoLoginHint } from '../lib/brandConfig'
 const STORAGE_KEY = 'nexoft-session'
 const LEGACY_STORAGE_KEY = 'amp-reventa-session'
 
-// Backward-compat migration (one-shot): copy old key to new and remove old.
+// Backward-compat migration (one-shot): remove old key first, then write new.
 function migrateLegacyKey() {
   if (typeof localStorage === 'undefined') return
-  const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
-  if (legacy && !localStorage.getItem(STORAGE_KEY)) {
-    localStorage.setItem(STORAGE_KEY, legacy)
+  try {
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (!legacy) return
+    if (localStorage.getItem(STORAGE_KEY)) {
+      localStorage.removeItem(LEGACY_STORAGE_KEY)
+      return
+    }
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+    try {
+      localStorage.setItem(STORAGE_KEY, legacy)
+    } catch {
+      // Quota tight; user will just need to log in again.
+    }
+  } catch {
+    // localStorage unavailable.
   }
-  if (legacy) localStorage.removeItem(LEGACY_STORAGE_KEY)
 }
 migrateLegacyKey()
 

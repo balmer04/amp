@@ -24,15 +24,34 @@ const BROADCAST_CHANNEL_KEY = 'nexoft-sync'
 const PRODUCTS_STORAGE_KEY = 'nexoft-productos'
 
 // One-shot legacy key migration (amp-reventa-* → nexoft-*)
+// IMPORTANT: remove old key BEFORE setting new one to avoid quota overflow
+// (large data blobs can be ~3-4 MB; doubling them blows past the 5MB cap).
 if (typeof localStorage !== 'undefined') {
   const migrations = [
     ['amp-reventa-data', STORAGE_KEY],
     ['productos', PRODUCTS_STORAGE_KEY],
   ]
   migrations.forEach(([oldKey, newKey]) => {
-    const v = localStorage.getItem(oldKey)
-    if (v && !localStorage.getItem(newKey)) localStorage.setItem(newKey, v)
-    if (v) localStorage.removeItem(oldKey)
+    try {
+      const oldValue = localStorage.getItem(oldKey)
+      if (!oldValue) return
+      // If the new key already has data, the user has already migrated.
+      // Just drop the leftover old key.
+      if (localStorage.getItem(newKey)) {
+        localStorage.removeItem(oldKey)
+        return
+      }
+      // Otherwise: free the slot first, then write the new key.
+      localStorage.removeItem(oldKey)
+      try {
+        localStorage.setItem(newKey, oldValue)
+      } catch {
+        // Quota still tight (other large keys around). The user just won't
+        // carry the legacy data over — they'll re-seed from the API.
+      }
+    } catch {
+      // localStorage unavailable / private mode — ignore.
+    }
   })
 }
 
